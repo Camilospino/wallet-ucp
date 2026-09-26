@@ -1,0 +1,17 @@
+{
+  "name": "WalletUCP - Billetera Virtual Académica",
+  "short_name": "WalletUCP",
+  "description": "Billetera virtual académica para demostrar transacciones atómicas en PostgreSQL",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#667eea",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

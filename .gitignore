@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# NOTE: package-lock.json is intentionally NOT ignored. It is required for
+# reproducible installs (`npm ci`) in Docker and CI.
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build outputs
+dist/
+build/
+*.log
+
+# Docker
+docker/postgres/data/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Database dumps and backups.
+# NOTE: do NOT use a blanket `*.sql` rule here — that would exclude
+# database/migrations/ and database/seeds/, which are required source files.
+*.dump
+*.bak
+*.sql.gz
+*.sql.bak
+backups/
+!database/**/*.sql
+
+# Swagger generated files
+docs/swagger/generated/

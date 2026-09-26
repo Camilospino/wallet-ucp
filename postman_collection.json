@@ -1,0 +1,457 @@
+{
+  "info": {
+    "name": "WalletUCP API",
+    "description": "Importa esta coleccion y ejecuta primero la carpeta 1. Autenticacion: el token se guarda solo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5001",
+      "type": "string"
+    },
+    {
+      "key": "userToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Sin autenticacion",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "Raiz - info del servidor",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Autenticacion",
+      "item": [
+        {
+          "name": "Login ADMIN (guarda token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Admin123!\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"Login exitoso\", () => pm.expect(body.success).to.eql(true));",
+                  "pm.test(\"Rol correcto\", () => pm.expect(body.data.user.rol).to.eql(\"admin\"));",
+                  "pm.collectionVariables.set(\"adminToken\", body.data.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login USER1 (guarda token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user1@example.com\",\n  \"password\": \"User123!\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"Login exitoso\", () => pm.expect(body.success).to.eql(true));",
+                  "pm.test(\"Rol correcto\", () => pm.expect(body.data.user.rol).to.eql(\"user\"));",
+                  "pm.collectionVariables.set(\"userToken\", body.data.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Perfil (GET /auth/me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/me"
+          }
+        },
+        {
+          "name": "Password incorrecta (espera 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user1@example.com\",\n  \"password\": \"claveIncorrecta\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Registro de usuario nuevo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Ana\",\n  \"apellido\": \"Restrepo\",\n  \"email\": \"ana.test@example.com\",\n  \"password\": \"Password123!\",\n  \"telefono\": \"+573001234567\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/register"
+          }
+        },
+        {
+          "name": "Registro duplicado (espera 409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Otro\",\n  \"apellido\": \"Dup\",\n  \"email\": \"user1@example.com\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/register"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Billetera",
+      "item": [
+        {
+          "name": "Ver mi billetera",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/wallet"
+          }
+        },
+        {
+          "name": "Depositar 10000",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10000\n}"
+            },
+            "url": "{{baseUrl}}/api/wallets/deposit"
+          }
+        },
+        {
+          "name": "Retirar 5000",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 5000\n}"
+            },
+            "url": "{{baseUrl}}/api/wallets/withdraw"
+          }
+        },
+        {
+          "name": "Retiro sin saldo (espera 400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 99999999\n}"
+            },
+            "url": "{{baseUrl}}/api/wallets/withdraw"
+          }
+        },
+        {
+          "name": "Depositar 0 - VALIDACION (espera 422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 0\n}"
+            },
+            "url": "{{baseUrl}}/api/wallets/deposit"
+          }
+        },
+        {
+          "name": "Depositar texto - VALIDACION (espera 422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"abc\"\n}"
+            },
+            "url": "{{baseUrl}}/api/wallets/deposit"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Transferencias",
+      "item": [
+        {
+          "name": "Transferir 5000 a user2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientEmail\": \"user2@example.com\",\n  \"amount\": 5000\n}"
+            },
+            "url": "{{baseUrl}}/api/transfers"
+          }
+        },
+        {
+          "name": "Transferir a si mismo (espera 400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientEmail\": \"user1@example.com\",\n  \"amount\": 100\n}"
+            },
+            "url": "{{baseUrl}}/api/transfers"
+          }
+        },
+        {
+          "name": "Transferir a inexistente (espera 404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientEmail\": \"noexiste@example.com\",\n  \"amount\": 100\n}"
+            },
+            "url": "{{baseUrl}}/api/transfers"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Transacciones",
+      "item": [
+        {
+          "name": "Historial paginado",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/transactions?page=1&limit=5"
+          }
+        },
+        {
+          "name": "Filtrar por tipo DEPOSIT",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/transactions?tipo=DEPOSIT"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Administracion (requiere ADMIN)",
+      "item": [
+        {
+          "name": "Listar usuarios",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/admin/users"
+          }
+        },
+        {
+          "name": "Listar billeteras",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/admin/wallets"
+          }
+        },
+        {
+          "name": "Listar transacciones",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/admin/transactions"
+          }
+        },
+        {
+          "name": "Con token de usuario normal (espera 403)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/admin/users"
+          }
+        }
+      ]
+    }
+  ]
+}

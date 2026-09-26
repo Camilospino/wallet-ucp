@@ -1,0 +1,83 @@
+# Host port mapping is overridable via a root .env file (copy .env.example).
+# macOS AirPlay Receiver occupies port 5000, so you may need to set
+# BACKEND_PORT=5001 in .env if the backend fails to bind.
+services:
+  postgres:
+    image: postgres:14-alpine
+    container_name: walletucp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: walletucp
+      POSTGRES_PASSWORD: walletucp_password
+      POSTGRES_DB: walletucp
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations/01-create_tables.sql:/docker-entrypoint-initdb.d/01-create_tables.sql:ro
+      - ./database/seeds/01-seed_data.sql:/docker-entrypoint-initdb.d/02-seed_data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U walletucp -d walletucp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - walletucp-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: walletucp-backend
+    restart: unless-stopped
+    environment:
+      PORT: 5000
+      DATABASE_URL: postgresql://walletucp:walletucp_password@postgres:5432/walletucp
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production}
+      JWT_EXPIRES_IN: 24h
+      BCRYPT_ROUNDS: 10
+      NODE_ENV: development
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      RATE_LIMIT_AUTH_MAX: ${RATE_LIMIT_AUTH_MAX:-50}
+      RATE_LIMIT_FINANCIAL_MAX: ${RATE_LIMIT_FINANCIAL_MAX:-100}
+      RATE_LIMIT_GENERAL_MAX: ${RATE_LIMIT_GENERAL_MAX:-5000}
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - walletucp-network
+    command: npm run dev
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: walletucp-frontend
+    restart: unless-stopped
+    environment:
+      # NOTE: Vite inlines VITE_* variables when the dev server starts, so this
+      # value must match the host port the backend is published on.
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:5000}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - walletucp-network
+    command: npm run dev -- --host
+
+volumes:
+  postgres_data:
+
+networks:
+  walletucp-network:
+    driver: bridge
