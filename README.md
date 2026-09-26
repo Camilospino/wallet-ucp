@@ -501,11 +501,46 @@ http://localhost:5000/api-docs
 
 ## CI/CD Pipeline
 
-El proyecto incluye un pipeline de CI/CD en `.github/workflows/pipeline.yml` que:
-- Ejecuta pruebas en cada push y pull request
-- Valida la calidad del código con linters
-- Construye las imágenes Docker
-- Despliega a entorno de staging (configurable)
+El pipeline vive en `.github/workflows/pipeline.yml` y se dispara en cada push y
+pull request contra `main` y `develop`. Cada job hace una sola cosa y solo
+publica artefactos cuando todo lo anterior pasó:
+
+| Job | Cuándo corre | Qué hace |
+| --- | --- | --- |
+| `test` | siempre | Lint y pruebas de backend (unitarios e integración contra PostgreSQL) y de frontend, en Node 20 y 22 |
+| `build` | push | Construye las imágenes de backend, de frontend y el stack de `docker compose` |
+| `security-scan` | siempre | `npm audit` bloqueante sobre dependencias de producción, informativo sobre las de desarrollo, y escaneo de secretos con TruffleHog |
+| `smoke-test` | push | Levanta el stack y comprueba `/health`, que el frontend sirve la app y que un login real contra la API responde |
+| `deploy_dev` | push a `develop` | Publica las imágenes en GitHub Container Registry con el tag `dev` |
+| `deploy_main` | push a `main` | Publica las imágenes en GitHub Container Registry con el tag `latest` |
+
+### Imágenes en GitHub Container Registry
+
+Los jobs de despliegue publican en GHCR, por eso el `GITHUB_TOKEN` necesita el
+permiso `packages: write` (está declarado a nivel de workflow):
+
+```
+ghcr.io/<owner>/wallet-backend:dev       # desde develop
+ghcr.io/<owner>/wallet-backend:latest    # desde main
+ghcr.io/<owner>/wallet-frontend:dev
+ghcr.io/<owner>/wallet-frontend:latest
+```
+
+Cada publicación etiqueta además el commit con
+`ghcr.io/<owner>/wallet-backend:<sha>` y vuelve a descargar la imagen desde el
+registro. Un push que falló en silencio igual dejaría el pipeline en verde, así
+que verificar que el artefacto existe es parte del job, no un extra.
+
+El alcance del despliegue es **publicar las imágenes**: el pipeline no aprovisiona
+servidores ni despliega por SSH. Para levantar lo publicado localmente:
+
+```bash
+docker run -p 5000:5000 ghcr.io/<owner>/wallet-backend:latest
+docker run -p 3000:3000 ghcr.io/<owner>/wallet-frontend:latest
+```
+
+Si el registro es privado, primero `docker login ghcr.io` con un token de
+GitHub que tenga permiso `read:packages`.
 
 ## Principios de Diseño
 
