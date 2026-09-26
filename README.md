@@ -189,7 +189,7 @@ acepta `client` como **último** parámetro, con el pool como valor por defecto.
 
 ### Requisitos Previos
 - Docker y Docker Compose
-- Node.js 18+ (para desarrollo local sin Docker)
+- Node.js 20+ (para desarrollo local sin Docker)
 - PostgreSQL 14+ (para desarrollo local sin Docker)
 
 ### Con Docker (Recomendado)
@@ -462,6 +462,23 @@ npx jest --selectProjects unit
 # Solo integración (requiere PostgreSQL)
 npx jest --selectProjects integration
 ```
+
+## Seguridad de dependencias
+
+`npm audit` se ejecuta en CI con dos niveles, porque no es lo mismo una
+dependencia que se despliega y una que solo se usa en desarrollo:
+
+```bash
+# Bloqueante: solo lo que llega a produccion
+npm audit --omit=dev --audit-level=moderate
+
+# Informativo: herramientas de desarrollo (no bloquea el pipeline)
+npm audit --audit-level=high
+```
+
+Versiones actuales: `react-router-dom` 7.18.4, `vite` 7.3.6, `vitest` 3.2.7.
+Node 20 es el mínimo porque las versiones parcheadas de Vite y React Router
+ya no soportan Node 18.
 
 ## Documentación Swagger
 
