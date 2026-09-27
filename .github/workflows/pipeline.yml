@@ -12,12 +12,13 @@ permissions:
   contents: write
 
 env:
-  NODE_ENV: production
   # Vite inlines VITE_* variables when the build starts, so the value is baked
   # into the bundle and cannot be changed afterwards. Define the repository
   # variables VITE_API_URL_PROD and VITE_API_URL_DEV (Settings > Secrets and
   # variables > Actions > Variables) to point each branch at its own backend;
   # until then the bundle falls back to the compose address.
+  # NODE_ENV is deliberately NOT set here: a global value leaked into the test
+  # jobs and made Vitest run in production mode. It is set per job instead.
   VITE_API_URL: ${{ github.ref_name == 'main' && vars.VITE_API_URL_PROD || vars.VITE_API_URL_DEV || 'http://localhost:5000' }}
 
 jobs:
@@ -59,13 +60,12 @@ jobs:
         cd backend
         npm ci
 
-    - name: Apply database migrations
-      env:
-        PGPASSWORD: walletucp_password
-      run: |
-        psql -h localhost -U walletucp -d walletucp_test -v ON_ERROR_STOP=1 \
-          -f database/migrations/01-create_tables.sql
-
+    # The schema is NOT applied from here on purpose. `psql` is not part of the
+    # ubuntu-latest image, so the step died with exit code 127 (command not
+    # found) and never reached the tests. The integration Jest project already
+    # runs tests/setup/globalSetup.js, which creates the database if missing and
+    # applies this very same (idempotent) 01-create_tables.sql, so an extra
+    # migration step here would only duplicate the work.
     - name: Run backend linter
       run: |
         cd backend
@@ -117,6 +117,11 @@ jobs:
   build:
     needs: [ test, security-scan ]
     runs-on: [self-hosted]
+
+    env:
+      # Only the deployed bundle is a production build. The test jobs keep their
+      # own NODE_ENV so Vitest and Jest do not run in production mode.
+      NODE_ENV: production
 
     steps:
     - name: Checkout code
