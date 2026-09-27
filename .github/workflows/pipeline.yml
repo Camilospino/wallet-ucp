@@ -6,12 +6,19 @@ on:
   pull_request:
     branches: [ main, develop ]
 
-# `contents: read` keeps checkout working; `packages: write` is what lets the
-# deploy jobs push images to GitHub Container Registry. Without it GHCR
-# rejects the push, and the package is created automatically on first push.
+# `contents: write` is what lets the version job push the generated tag;
+# checkout only needs `read`, so nothing else runs with more rights than required.
 permissions:
-  contents: read
-  packages: write
+  contents: write
+
+env:
+  NODE_ENV: production
+  # Vite inlines VITE_* variables when the build starts, so the value is baked
+  # into the bundle and cannot be changed afterwards. Define the repository
+  # variables VITE_API_URL_PROD and VITE_API_URL_DEV (Settings > Secrets and
+  # variables > Actions > Variables) to point each branch at its own backend;
+  # until then the bundle falls back to the compose address.
+  VITE_API_URL: ${{ github.ref_name == 'main' && vars.VITE_API_URL_PROD || vars.VITE_API_URL_DEV || 'http://localhost:5000' }}
 
 jobs:
   test:
@@ -103,63 +110,59 @@ jobs:
         cd frontend
         npm run build
 
+  # Compiles the frontend into frontend/dist and hands it to the deploy jobs as a
+  # workflow artifact. Runs on the self-hosted runner (the WSL machine that
+  # serves /var/www/html) so the build happens on the same Node 20 runtime that
+  # the deploys target.
   build:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    needs: [ test, security-scan ]
+    runs-on: [self-hosted]
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Build backend image
-      run: |
-        docker build -t walletucp-backend:${{ github.sha }} ./backend
-
-    - name: Build frontend image
-      run: |
-        docker build -t walletucp-frontend:${{ github.sha }} ./frontend
-
-    - name: Run Docker Compose build
-      run: |
-        docker compose build
-
-  security-scan:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Audit production dependencies (blocking)
-      # Only what actually ships to production must be clean. `npm audit`
-      # exits 1 when it finds anything, so dev-only tooling is checked
-      # separately below and never blocks the pipeline on its own.
-      run: |
-        cd backend
-        npm audit --omit=dev --audit-level=moderate
-        cd ../frontend
-        npm audit --omit=dev --audit-level=moderate
-
-    - name: Audit development dependencies (informational)
-      # Vite/Vitest/esbuild are devDependencies and are never deployed.
-      # Reported for visibility, but they must not fail the build.
-      continue-on-error: true
-      run: |
-        cd backend
-        npm audit --audit-level=high
-        cd ../frontend
-        npm audit --audit-level=high
-
-    - name: Check for secrets
-      uses: trufflesecurity/trufflehog@main
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
       with:
-        path: ./
-        base: ${{ github.event.repository.default_branch }}
-        head: HEAD
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Validate tooling
+      run: |
+        echo "Validando el proyecto"
+
+        echo "Version de Node:"
+        node --version
+
+        echo "Version de NPM:"
+        npm --version
+
+    - name: Install dependencies
+      run: |
+        echo "Instalando dependencias"
+        cd frontend
+        npm ci --prefer-offline
+
+    - name: Build frontend
+      run: |
+        echo "Generando aplicacion"
+        cd frontend
+        npm run build
+
+    - name: Verify build
+      run: |
+        echo "Verificando build"
+        test -f frontend/dist/index.html
+        echo "Build exitoso"
+
+    - name: Save artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: wallet-build-${{ github.sha }}
+        path: frontend/dist/
+        retention-days: 7
 
   # Smoke test: builds the compose stack and asserts the API answers. This is
   # a real check, not a placeholder, so the job is worth running.
@@ -173,7 +176,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Start the stack
-      run: docker compose up -d --wait
+      run: docker compose up -d --build --wait
 
     - name: Show logs on failure
       if: failure()
@@ -209,94 +212,150 @@ jobs:
       if: always()
       run: docker compose down -v
 
-  deploy_dev:
-    needs: [build, security-scan]
+  security-scan:
     runs-on: ubuntu-latest
-    # Only ever runs on its own branch.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Build and push backend image
-      uses: docker/build-push-action@v6
-      with:
-        context: ./backend
-        push: true
-        tags: |
-          ghcr.io/${{ github.repository_owner }}/wallet-backend:dev
-          ghcr.io/${{ github.repository_owner }}/wallet-backend:${{ github.sha }}
-
-    - name: Build and push frontend image
-      uses: docker/build-push-action@v6
-      with:
-        context: ./frontend
-        push: true
-        tags: |
-          ghcr.io/${{ github.repository_owner }}/wallet-frontend:dev
-          ghcr.io/${{ github.repository_owner }}/wallet-frontend:${{ github.sha }}
-
-    - name: Verify the pushed image can be pulled back
-      # A push that silently produced an unusable image would still be a
-      # green build, so the artifact is pulled again to prove it exists.
+    - name: Audit production dependencies (blocking)
+      # Only what actually ships to production must be clean. `npm audit`
+      # exits 1 when it finds anything, so dev-only tooling is checked
+      # separately below and never blocks the pipeline on its own.
       run: |
-        docker pull ghcr.io/${{ github.repository_owner }}/wallet-backend:${{ github.sha }}
-        docker pull ghcr.io/${{ github.repository_owner }}/wallet-frontend:${{ github.sha }}
-        echo "Images are in the registry"
+        cd backend
+        npm audit --omit=dev --audit-level=moderate
+        cd ../frontend
+        npm audit --omit=dev --audit-level=moderate
+
+    - name: Audit development dependencies (informational)
+      # Vite/Vitest/esbuild are devDependencies and are never deployed.
+      # Reported for visibility, but they must not fail the build.
+      continue-on-error: true
+      run: |
+        cd backend
+        npm audit --audit-level=high
+        cd ../frontend
+        npm audit --audit-level=high
+
+    - name: Check for secrets
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: ${{ github.event.repository.default_branch }}
+        head: HEAD
+
+  # Deployment strategy. Both jobs download the exact artifact produced by the
+  # build job, so what reaches the server is the same bundle that passed the
+  # tests. The copy is idempotent (remove, recreate, copy) and publishes to
+  # different folders per branch, which keeps QA and production independent.
+  deploy_dev:
+    needs: build
+    runs-on: [self-hosted]
+    # Only ever runs on its own branch.
+    if: github.event_name == 'push' && github.ref_name == 'develop'
+
+    environment:
+      name: development
+
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v6
+      with:
+        name: wallet-build-${{ github.sha }}
+        path: dist/
+
+    - name: Deploy to QA
+      run: |
+        echo "Deploying the project to QA"
+        echo "Cleaning the deployment folder"
+        rm -rf /var/www/html/wallet-ucp-dev
+        echo "Creating the deployment folder"
+        mkdir -p /var/www/html/wallet-ucp-dev
+        echo "Copying files to the deployment folder"
+        cp -a dist/. /var/www/html/wallet-ucp-dev
+        echo "Deployment completed"
 
   deploy_main:
-    needs: [build, security-scan]
-    runs-on: ubuntu-latest
+    needs: build
+    runs-on: [self-hosted]
     # Only ever runs on its own branch.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref_name == 'main'
+
+    environment:
+      name: development
+
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v6
+      with:
+        name: wallet-build-${{ github.sha }}
+        path: dist/
+
+    - name: Deploy to production
+      run: |
+        echo "Deploying the project to production"
+        echo "Cleaning the deployment folder"
+        rm -rf /var/www/html/wallet-ucp
+        echo "Creating the deployment folder"
+        mkdir -p /var/www/html/wallet-ucp
+        echo "Copying files to the deployment folder"
+        cp -a dist/. /var/www/html/wallet-ucp
+        echo "Deployment completed"
+
+  # Creates the next vX.Y.Z tag for the commit that was just deployed to
+  # production, so every merge to main maps to exactly one released version.
+  version:
+    needs: deploy_main
+    runs-on: [self-hosted]
+    # Only ever runs on its own branch.
+    if: github.event_name == 'push' && github.ref_name == 'main'
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
+      uses: actions/checkout@v6
       with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
 
-    - name: Build and push backend image
-      uses: docker/build-push-action@v6
-      with:
-        context: ./backend
-        push: true
-        tags: |
-          ghcr.io/${{ github.repository_owner }}/wallet-backend:latest
-          ghcr.io/${{ github.repository_owner }}/wallet-backend:${{ github.sha }}
-
-    - name: Build and push frontend image
-      uses: docker/build-push-action@v6
-      with:
-        context: ./frontend
-        push: true
-        tags: |
-          ghcr.io/${{ github.repository_owner }}/wallet-frontend:latest
-          ghcr.io/${{ github.repository_owner }}/wallet-frontend:${{ github.sha }}
-
-    - name: Verify the pushed image can be pulled back
-      # A push that silently produced an unusable image would still be a
-      # green build, so the artifact is pulled again to prove it exists.
+    - name: Create new version
       run: |
-        docker pull ghcr.io/${{ github.repository_owner }}/wallet-backend:${{ github.sha }}
-        docker pull ghcr.io/${{ github.repository_owner }}/wallet-frontend:${{ github.sha }}
-        echo "Images are in the registry"
+        echo "Looking for the latest version..."
+
+        # Bring in all existing tags
+        git fetch --tags
+
+        # Get the latest tag matching the vX.Y.Z pattern
+        LAST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
+
+        echo "Latest tag found: $LAST_TAG"
+
+        # If no tag exists yet, start at v1.0.0
+        if [ -z "$LAST_TAG" ]; then
+          NEW_TAG="v1.0.0"
+        else
+          VERSION=${LAST_TAG#v}
+
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          PATCH=$((PATCH + 1))
+
+          NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+        fi
+
+        echo "New version: $NEW_TAG"
+        echo "Commit to be tagged: $GITHUB_SHA"
+
+        # Set the Git identity
+        git config user.name "GitHub Actions"
+        git config user.email "github-actions@github.com"
+
+        # Tag exactly the commit that was deployed
+        git tag -a "$NEW_TAG" "$GITHUB_SHA" -m "Version $NEW_TAG"
+
+        # Send the tag to GitHub
+        git push origin "$NEW_TAG"
+
+        echo "Tag $NEW_TAG created successfully"
