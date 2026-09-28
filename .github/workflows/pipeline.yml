@@ -152,6 +152,15 @@ jobs:
         echo "Version de NPM:"
         npm --version
 
+    - name: Clean previous install
+      # A self-hosted runner keeps its workspace between runs. If a previous job
+      # was cancelled midway, node_modules stays half-installed and `npm ci`
+      # leaves it as is, producing a build that fails with "vite: not found".
+      # Removing it first makes every run start from a known state.
+      run: |
+        echo "Limpiando instalaciones previas"
+        rm -rf frontend/node_modules frontend/dist
+
     - name: Install dependencies
       run: |
         echo "Instalando dependencias"
