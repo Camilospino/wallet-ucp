@@ -83,11 +83,6 @@ wallet-ucp/
 ├── database/
 │   ├── migrations/
 │   └── seeds/
-├── docker/
-│   ├── nginx/
-│   └── postgres/
-├── docs/
-│   └── swagger/
 ├── .github/
 │   └── workflows/
 │       └── pipeline.yml
