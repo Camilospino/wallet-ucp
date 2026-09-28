@@ -126,21 +126,15 @@ jobs:
     needs: [ test, security-scan ]
     runs-on: [self-hosted]
 
-    env:
-      # Only the deployed bundle is a production build. The test jobs keep their
-      # own NODE_ENV so Vitest and Jest do not run in production mode.
-      NODE_ENV: production
-
+    # NOTE: NODE_ENV is deliberately NOT set at job level. npm treats
+    # NODE_ENV=production as "skip devDependencies", and vite/vitest live there,
+    # so the build died with "vite: not found". Vite sets production mode on its
+    # own when building, so nothing is lost by leaving it unset.
     steps:
     - name: Checkout code
       uses: actions/checkout@v6
 
     - name: Setup Node.js
-      # No `cache: npm` here on purpose. On this self-hosted runner the cached
-      # tarballs were restored into a different npm cache directory, npm then
-      # skipped packages it believed were present, and the install finished
-      # incomplete so the build died with "vite: not found". A clean install
-      # takes about 10 seconds, so the cache bought little and cost reliability.
       uses: actions/setup-node@v6
       with:
         node-version: '20'
@@ -156,9 +150,9 @@ jobs:
         npm --version
 
     - name: Clean previous install
-      # A self-hosted runner keeps its workspace between runs. If a previous job
-      # was cancelled midway, node_modules stays half-installed and `npm ci`
-      # leaves it as is. Removing it makes every run start from a known state.
+      # A self-hosted runner keeps its workspace between runs, so a job that was
+      # cancelled midway leaves node_modules half installed. Starting from a
+      # clean directory makes the result independent of the previous run.
       run: |
         echo "Limpiando instalaciones previas"
         rm -rf frontend/node_modules frontend/dist
@@ -170,12 +164,11 @@ jobs:
         npm ci
 
     - name: Verify toolchain installed
-      # npm ci can exit 0 after an interrupted download. Without this check the
-      # failure only shows up later as a confusing "vite: not found".
+      # If devDependencies were skipped, npm still exits 0. Checking here turns a
+      # confusing "vite: not found" later into a clear failure at the cause.
       run: |
         test -x frontend/node_modules/.bin/vite
-        test -d frontend/node_modules/vite
-        echo "Vite instalado: $(cd frontend && node -e "console.log(require('vite/package.json').version)")"
+        echo "Vite $(cd frontend && node -p "require('vite/package.json').version") instalado"
 
     - name: Build frontend
       run: |
