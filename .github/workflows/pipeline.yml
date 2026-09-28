@@ -6,6 +6,29 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+# `contents: write` is what lets the version job push the generated tag;
+# checkout only needs `read`, so nothing else runs with more rights than required.
+permissions:
+  contents: write
+
+env:
+  # Vite inlines VITE_* variables when the build starts, so the value is baked
+  # into the bundle and cannot be changed afterwards. The browser must reach the
+  # API through the SAME NGINX host that served the page: the server blocks
+  # proxy /api/ to the backend of each environment, so the bundle uses a
+  # relative-to-origin request instead of a hardcoded IP.
+  #
+  # QA         -> wallet-ucp-qa.local:8080  -> nginx :5001 -> BD walletucp_qa
+  # Produccion -> wallet-ucp.local:8080     -> nginx :5000 -> BD walletucp
+  #
+  # Override these with the repository variables VITE_API_URL_PROD and
+  # VITE_API_URL_DEV when the real domains are known.
+  # NODE_ENV is deliberately NOT set here: a global value leaked into the test
+  # jobs and made Vitest run in production mode. It is set per job instead.
+  VITE_API_URL: ${{ vars.VITE_API_URL_PROD || vars.VITE_API_URL_DEV || '' }}
+  # Label rendered in the navbar so the two environments are distinguishable.
+  VITE_ENV_NAME: ${{ github.ref_name == 'main' && 'PRODUCCION' || 'QA' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -45,13 +68,12 @@ jobs:
         cd backend
         npm ci
 
-    - name: Apply database migrations
-      env:
-        PGPASSWORD: walletucp_password
-      run: |
-        psql -h localhost -U walletucp -d walletucp_test -v ON_ERROR_STOP=1 \
-          -f database/migrations/01-create_tables.sql
-
+    # The schema is NOT applied from here on purpose. `psql` is not part of the
+    # ubuntu-latest image, so the step died with exit code 127 (command not
+    # found) and never reached the tests. The integration Jest project already
+    # runs tests/setup/globalSetup.js, which creates the database if missing and
+    # applies this very same (idempotent) 01-create_tables.sql, so an extra
+    # migration step here would only duplicate the work.
     - name: Run backend linter
       run: |
         cd backend
@@ -96,29 +118,124 @@ jobs:
         cd frontend
         npm run build
 
+  # Compiles the frontend into frontend/dist and hands it to the deploy jobs as a
+  # workflow artifact. Runs on the self-hosted runner, which is the
+  # `laboratorio-ubuntu` container, so the build happens on the same machine that
+  # serves /var/www/html and NGINX.
   build:
-    needs: test
+    needs: [ test, security-scan ]
+    runs-on: [self-hosted]
+
+    # NOTE: NODE_ENV is deliberately NOT set at job level. npm treats
+    # NODE_ENV=production as "skip devDependencies", and vite/vitest live there,
+    # so the build died with "vite: not found". Vite sets production mode on its
+    # own when building, so nothing is lost by leaving it unset.
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: '20'
+
+    - name: Validate tooling
+      run: |
+        echo "Validando el proyecto"
+
+        echo "Version de Node:"
+        node --version
+
+        echo "Version de NPM:"
+        npm --version
+
+    - name: Clean previous install
+      # A self-hosted runner keeps its workspace between runs, so a job that was
+      # cancelled midway leaves node_modules half installed. Starting from a
+      # clean directory makes the result independent of the previous run.
+      run: |
+        echo "Limpiando instalaciones previas"
+        rm -rf frontend/node_modules frontend/dist
+
+    - name: Install dependencies
+      run: |
+        echo "Instalando dependencias"
+        cd frontend
+        npm ci
+
+    - name: Verify toolchain installed
+      # If devDependencies were skipped, npm still exits 0. Checking here turns a
+      # confusing "vite: not found" later into a clear failure at the cause.
+      run: |
+        test -x frontend/node_modules/.bin/vite
+        echo "Vite $(cd frontend && node -p "require('vite/package.json').version") instalado"
+
+    - name: Build frontend
+      run: |
+        echo "Generando aplicacion"
+        cd frontend
+        npm run build
+
+    - name: Verify build
+      run: |
+        echo "Verificando build"
+        test -f frontend/dist/index.html
+        echo "Build exitoso"
+
+    - name: Save artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: wallet-build-${{ github.sha }}
+        path: frontend/dist/
+        retention-days: 7
+
+  # Smoke test: builds the compose stack and asserts the API answers. This is
+  # a real check, not a placeholder, so the job is worth running.
+  smoke-test:
+    needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+    - name: Start the stack
+      run: docker compose up -d --build --wait
 
-    - name: Build backend image
-      run: |
-        docker build -t walletucp-backend:${{ github.sha }} ./backend
+    - name: Show logs on failure
+      if: failure()
+      run: docker compose logs --no-color
 
-    - name: Build frontend image
+    - name: Verify the API is healthy
       run: |
-        docker build -t walletucp-frontend:${{ github.sha }} ./frontend
+        for i in $(seq 1 30); do
+          if curl -fsS http://localhost:5000/health; then
+            echo ""
+            echo "API healthy"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "The API never became healthy" >&2
+        exit 1
 
-    - name: Run Docker Compose build
+    - name: Verify the frontend serves the app
       run: |
-        docker compose build
+        curl -fsS http://localhost:3000/ | grep -q 'WalletUCP' \
+          && echo "Frontend OK"
+
+    - name: Verify a login round-trip
+      run: |
+        response=$(curl -fsS -X POST http://localhost:5000/api/auth/login \
+          -H 'Content-Type: application/json' \
+          -d '{"email":"admin@example.com","password":"Admin123!"}')
+        echo "$response" | grep -q '"success":true' \
+          && echo "Login OK"
+
+    - name: Tear down
+      if: always()
+      run: docker compose down -v
 
   security-scan:
     runs-on: ubuntu-latest
@@ -154,50 +271,121 @@ jobs:
         base: ${{ github.event.repository.default_branch }}
         head: HEAD
 
-  # Smoke test: builds the compose stack and asserts the API answers. This is
-  # a real check, not a placeholder, so the job is worth running.
-  smoke-test:
+  # Deployment strategy. Both jobs download the exact artifact produced by the
+  # build job, so what reaches the server is the same bundle that passed the
+  # tests. The copy is idempotent (remove, recreate, copy) and publishes to
+  # different folders per branch, which keeps QA and production independent.
+  deploy_dev:
     needs: build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted]
+    # Only ever runs on its own branch.
+    if: github.event_name == 'push' && github.ref_name == 'develop'
+
+    environment:
+      name: development
+
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v6
+      with:
+        name: wallet-build-${{ github.sha }}
+        path: dist/
+
+    - name: Deploy to QA
+      # The runner is the laboratorio-ubuntu container, so these paths are inside
+      # it. The folder is wiped first so files removed from the bundle in a later
+      # commit do not linger and get served forever.
+      run: |
+        echo "Deploying the project to QA"
+        echo "Cleaning the deployment folder"
+        rm -rf /var/www/html/wallet-ucp-qa
+        echo "Creating the deployment folder"
+        mkdir -p /var/www/html/wallet-ucp-qa
+        echo "Copying files to the deployment folder"
+        cp -a dist/. /var/www/html/wallet-ucp-qa
+        echo "QA deployed to /var/www/html/wallet-ucp-qa (wallet-ucp-qa.local)"
+
+  deploy_main:
+    needs: build
+    runs-on: [self-hosted]
+    # Only ever runs on its own branch.
+    if: github.event_name == 'push' && github.ref_name == 'main'
+
+    environment:
+      name: development
+
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v6
+      with:
+        name: wallet-build-${{ github.sha }}
+        path: dist/
+
+    - name: Deploy to production
+      # Different folder than QA: the lab requires the two environments to be
+      # served from separate roots with separate NGINX server blocks.
+      run: |
+        echo "Deploying the project to production"
+        echo "Cleaning the deployment folder"
+        rm -rf /var/www/html/wallet-ucp-produccion
+        echo "Creating the deployment folder"
+        mkdir -p /var/www/html/wallet-ucp-produccion
+        echo "Copying files to the deployment folder"
+        cp -a dist/. /var/www/html/wallet-ucp-produccion
+        echo "Production deployed to /var/www/html/wallet-ucp-produccion (wallet-ucp.local)"
+
+  # Creates the next vX.Y.Z tag for the commit that was just deployed to
+  # production, so every merge to main maps to exactly one released version.
+  version:
+    needs: deploy_main
+    runs-on: [self-hosted]
+    # Only ever runs on its own branch.
+    if: github.event_name == 'push' && github.ref_name == 'main'
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
 
-    - name: Start the stack
-      run: docker compose up -d --wait
-
-    - name: Show logs on failure
-      if: failure()
-      run: docker compose logs --no-color
-
-    - name: Verify the API is healthy
+    - name: Create new version
       run: |
-        for i in $(seq 1 30); do
-          if curl -fsS http://localhost:5000/health; then
-            echo ""
-            echo "API healthy"
-            exit 0
-          fi
-          sleep 2
-        done
-        echo "The API never became healthy" >&2
-        exit 1
+        echo "Looking for the latest version..."
 
-    - name: Verify the frontend serves the app
-      run: |
-        curl -fsS http://localhost:3000/ | grep -q 'WalletUCP' \
-          && echo "Frontend OK"
+        # Bring in all existing tags
+        git fetch --tags
 
-    - name: Verify a login round-trip
-      run: |
-        response=$(curl -fsS -X POST http://localhost:5000/api/auth/login \
-          -H 'Content-Type: application/json' \
-          -d '{"email":"admin@example.com","password":"Admin123!"}')
-        echo "$response" | grep -q '"success":true' \
-          && echo "Login OK"
+        # Get the latest tag matching the vX.Y.Z pattern
+        LAST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
 
-    - name: Tear down
-      if: always()
-      run: docker compose down -v
+        echo "Latest tag found: $LAST_TAG"
+
+        # If no tag exists yet, start at v1.0.0
+        if [ -z "$LAST_TAG" ]; then
+          NEW_TAG="v1.0.0"
+        else
+          VERSION=${LAST_TAG#v}
+
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          PATCH=$((PATCH + 1))
+
+          NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+        fi
+
+        echo "New version: $NEW_TAG"
+        echo "Commit to be tagged: $GITHUB_SHA"
+
+        # Set the Git identity
+        git config user.name "GitHub Actions"
+        git config user.email "github-actions@github.com"
+
+        # Tag exactly the commit that was deployed
+        git tag -a "$NEW_TAG" "$GITHUB_SHA" -m "Version $NEW_TAG"
+
+        # Send the tag to GitHub
+        git push origin "$NEW_TAG"
+
+        echo "Tag $NEW_TAG created successfully"

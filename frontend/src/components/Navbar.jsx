@@ -11,12 +11,23 @@ export const Navbar = () => {
     navigate('/login')
   }
 
+  // Distinguishes the two deployment environments at a glance. The value is
+  // baked in at build time by the pipeline, so QA and production can never
+  // show the same badge.
+  const environment = import.meta.env.VITE_ENV_NAME || 'local'
+
   return (
     <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
       <div className="container">
         <Link className="navbar-brand" to="/dashboard">
           WalletUCP
         </Link>
+        <span
+          className="badge rounded-pill text-bg-warning me-2 align-self-center"
+          title="Ambiente de despliegue actual"
+        >
+          {environment}
+        </span>
         <button
           className="navbar-toggler"
           type="button"

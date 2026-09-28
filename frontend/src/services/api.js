@@ -1,6 +1,11 @@
 import axios from 'axios'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+// Empty baseURL makes axios use relative URLs, so requests go to the origin
+// that served the page. That is what we want in QA and production: the NGINX
+// server block of each environment proxies /api/ to its own backend. An empty
+// VITE_API_URL must NOT fall back to localhost, because the browser would then
+// call the developer's own machine instead of the deployed API.
+const API_URL = import.meta.env.VITE_API_URL || ''
 
 const api = axios.create({
   baseURL: API_URL,
