@@ -13,13 +13,21 @@ permissions:
 
 env:
   # Vite inlines VITE_* variables when the build starts, so the value is baked
-  # into the bundle and cannot be changed afterwards. Define the repository
-  # variables VITE_API_URL_PROD and VITE_API_URL_DEV (Settings > Secrets and
-  # variables > Actions > Variables) to point each branch at its own backend;
-  # until then the bundle falls back to the compose address.
+  # into the bundle and cannot be changed afterwards. The browser must reach the
+  # API through the SAME NGINX host that served the page: the server blocks
+  # proxy /api/ to the backend of each environment, so the bundle uses a
+  # relative-to-origin request instead of a hardcoded IP.
+  #
+  # QA         -> wallet-ucp-qa.local:8080  -> nginx :5001 -> BD walletucp_qa
+  # Produccion -> wallet-ucp.local:8080     -> nginx :5000 -> BD walletucp
+  #
+  # Override these with the repository variables VITE_API_URL_PROD and
+  # VITE_API_URL_DEV when the real domains are known.
   # NODE_ENV is deliberately NOT set here: a global value leaked into the test
   # jobs and made Vitest run in production mode. It is set per job instead.
-  VITE_API_URL: ${{ github.ref_name == 'main' && vars.VITE_API_URL_PROD || vars.VITE_API_URL_DEV || 'http://localhost:5000' }}
+  VITE_API_URL: ${{ vars.VITE_API_URL_PROD || vars.VITE_API_URL_DEV || '' }}
+  # Label rendered in the navbar so the two environments are distinguishable.
+  VITE_ENV_NAME: ${{ github.ref_name == 'main' && 'PRODUCCION' || 'QA' }}
 
 jobs:
   test:
