@@ -265,10 +265,18 @@ jobs:
         npm audit --audit-level=high
 
     - name: Check for secrets
+      # TruffleHog scans the DIFF between base and head. Pointing `base` at the
+      # default branch made the two commits identical whenever the push *was*
+      # the default branch, and the action then exits 1 with "BASE and HEAD
+      # commits are the same. TruffleHog won't scan anything" — blocking the
+      # pipeline without having found any secret.
+      #
+      # HEAD~1:HEAD scans exactly the commits introduced by this push, on every
+      # branch, and is never empty except on a single-commit repository.
       uses: trufflesecurity/trufflehog@main
       with:
         path: ./
-        base: ${{ github.event.repository.default_branch }}
+        base: HEAD~1
         head: HEAD
 
   # Deployment strategy. Both jobs download the exact artifact produced by the
