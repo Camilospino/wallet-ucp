@@ -111,9 +111,9 @@ jobs:
         npm run build
 
   # Compiles the frontend into frontend/dist and hands it to the deploy jobs as a
-  # workflow artifact. Runs on the self-hosted runner (the WSL machine that
-  # serves /var/www/html) so the build happens on the same Node 20 runtime that
-  # the deploys target.
+  # workflow artifact. Runs on the self-hosted runner, which is the
+  # `laboratorio-ubuntu` container, so the build happens on the same machine that
+  # serves /var/www/html and NGINX.
   build:
     needs: [ test, security-scan ]
     runs-on: [self-hosted]
@@ -272,15 +272,18 @@ jobs:
         path: dist/
 
     - name: Deploy to QA
+      # The runner is the laboratorio-ubuntu container, so these paths are inside
+      # it. The folder is wiped first so files removed from the bundle in a later
+      # commit do not linger and get served forever.
       run: |
         echo "Deploying the project to QA"
         echo "Cleaning the deployment folder"
-        rm -rf /var/www/html/wallet-ucp-dev
+        rm -rf /var/www/html/wallet-ucp-qa
         echo "Creating the deployment folder"
-        mkdir -p /var/www/html/wallet-ucp-dev
+        mkdir -p /var/www/html/wallet-ucp-qa
         echo "Copying files to the deployment folder"
-        cp -a dist/. /var/www/html/wallet-ucp-dev
-        echo "Deployment completed"
+        cp -a dist/. /var/www/html/wallet-ucp-qa
+        echo "QA deployed to /var/www/html/wallet-ucp-qa (wallet-ucp-qa.local)"
 
   deploy_main:
     needs: build
@@ -299,15 +302,17 @@ jobs:
         path: dist/
 
     - name: Deploy to production
+      # Different folder than QA: the lab requires the two environments to be
+      # served from separate roots with separate NGINX server blocks.
       run: |
         echo "Deploying the project to production"
         echo "Cleaning the deployment folder"
-        rm -rf /var/www/html/wallet-ucp
+        rm -rf /var/www/html/wallet-ucp-produccion
         echo "Creating the deployment folder"
-        mkdir -p /var/www/html/wallet-ucp
+        mkdir -p /var/www/html/wallet-ucp-produccion
         echo "Copying files to the deployment folder"
-        cp -a dist/. /var/www/html/wallet-ucp
-        echo "Deployment completed"
+        cp -a dist/. /var/www/html/wallet-ucp-produccion
+        echo "Production deployed to /var/www/html/wallet-ucp-produccion (wallet-ucp.local)"
 
   # Creates the next vX.Y.Z tag for the commit that was just deployed to
   # production, so every merge to main maps to exactly one released version.
