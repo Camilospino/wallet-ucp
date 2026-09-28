@@ -35,7 +35,15 @@ Demostrar cómo un backend procesa dinero simulado usando transacciones PostgreS
 ### Infraestructura
 - Docker
 - Docker Compose
-- Nginx (opcional, solo producción)
+- Nginx (sirve los dos ambientes y hace proxy hacia la API)
+
+Ambientes desplegados (ver [CI/CD Pipeline](#dos-ambientes-dos-carpetas)):
+
+| | QA | Producción |
+| --- | --- | --- |
+| URL | http://wallet-ucp-qa.local:8080 | http://wallet-ucp.local:8080 |
+| Puerto alternativo (sin editar `/etc/hosts`) | http://localhost:8081 | http://localhost:8082 |
+| Credenciales | `admin@example.com` / `Admin123!` | `admin@example.com` / `Admin123!` |
 
 ### Documentación
 - Swagger / OpenAPI
@@ -508,39 +516,65 @@ publica artefactos cuando todo lo anterior pasó:
 | Job | Cuándo corre | Qué hace |
 | --- | --- | --- |
 | `test` | siempre | Lint y pruebas de backend (unitarios e integración contra PostgreSQL) y de frontend, en Node 20 y 22 |
-| `build` | push | Construye las imágenes de backend, de frontend y el stack de `docker compose` |
 | `security-scan` | siempre | `npm audit` bloqueante sobre dependencias de producción, informativo sobre las de desarrollo, y escaneo de secretos con TruffleHog |
-| `smoke-test` | push | Levanta el stack y comprueba `/health`, que el frontend sirve la app y que un login real contra la API responde |
-| `deploy_dev` | push a `develop` | Publica las imágenes en GitHub Container Registry con el tag `dev` |
-| `deploy_main` | push a `main` | Publica las imágenes en GitHub Container Registry con el tag `latest` |
+| `build` | tras `test` y `security-scan` | Compila `frontend/dist` y lo publica como artefacto del workflow |
+| `smoke-test` | push | Levanta el stack con `docker compose` y comprueba `/health`, que el frontend sirve la app y que un login real contra la API responde |
+| `deploy_dev` | push a `develop` | Copia el artefacto a `/var/www/html/wallet-ucp-qa` |
+| `deploy_main` | push a `main` | Copia el artefacto a `/var/www/html/wallet-ucp-produccion` |
+| `version` | push a `main` | Calcula el siguiente tag `vX.Y.Z` y lo publica |
 
-### Imágenes en GitHub Container Registry
+### Dos ambientes, dos carpetas
 
-Los jobs de despliegue publican en GHCR, por eso el `GITHUB_TOKEN` necesita el
-permiso `packages: write` (está declarado a nivel de workflow):
+El laboratorio exige que QA y Producción se sirvan desde directorios distintos
+con configuración propia de NGINX. Nunca se despliegan sobre la misma carpeta.
 
-```
-ghcr.io/<owner>/wallet-backend:dev       # desde develop
-ghcr.io/<owner>/wallet-backend:latest    # desde main
-ghcr.io/<owner>/wallet-frontend:dev
-ghcr.io/<owner>/wallet-frontend:latest
-```
+| | Ambiente QA | Ambiente Producción |
+| --- | --- | --- |
+| Rama | `develop` | `main` |
+| Directorio | `/var/www/html/wallet-ucp-qa` | `/var/www/html/wallet-ucp-produccion` |
+| Host | `wallet-ucp-qa.local` | `wallet-ucp.local` |
+| Server block | `sites-available/wallet-ucp-qa` | `sites-available/wallet-ucp-produccion` |
+| Backend | Express en el puerto 5001 | Express en el puerto 5000 |
+| Base de datos | `walletucp_qa` | `walletucp` |
 
-Cada publicación etiqueta además el commit con
-`ghcr.io/<owner>/wallet-backend:<sha>` y vuelve a descargar la imagen desde el
-registro. Un push que falló en silencio igual dejaría el pipeline en verde, así
-que verificar que el artefacto existe es parte del job, no un extra.
+El flujo es `desarrollo local → develop → deploy QA → Merge Request → main →
+deploy Producción`. Como los dos ambientes usan bases de datos distintas, un
+depósito hecho en QA no altera los saldos de Producción.
 
-El alcance del despliegue es **publicar las imágenes**: el pipeline no aprovisiona
-servidores ni despliega por SSH. Para levantar lo publicado localmente:
+### Despliegue
+
+`build` produce el bundle una sola vez y lo publica como artefacto; los jobs de
+despliegue descargan exactamente ese artefacto, de modo que lo que llega al
+servidor es el mismo código que pasó las pruebas. Cada despliegue borra la
+carpeta y la vuelve a crear, para que un archivo eliminado en un commit posterior
+no siga serviéndose.
 
 ```bash
-docker run -p 5000:5000 ghcr.io/<owner>/wallet-backend:latest
-docker run -p 3000:3000 ghcr.io/<owner>/wallet-frontend:latest
+rm -rf /var/www/html/wallet-ucp-qa
+mkdir -p /var/www/html/wallet-ucp-qa
+cp -a dist/. /var/www/html/wallet-ucp-qa
 ```
 
-Si el registro es privado, primero `docker login ghcr.io` con un token de
-GitHub que tenga permiso `read:packages`.
+El runner autoalojado corre como el usuario `github-runner`, sin privilegios de
+root. Para que pueda borrar y recrear sus carpetas se le concede acceso con ACL
+sobre `/var/www/html` (`setfacl -m u:github-runner:rwx /var/www/html`), en lugar
+de cambiar el propietario de la raíz, donde viven los sitios de otros
+proyectos.
+
+### Versionamiento por tags (extensión)
+
+Tras cada despliegue a Producción, el job `version` lee el último tag con
+formato `vX.Y.Z`, incrementa el número de *patch* y publica el tag sobre el
+commit que se acaba de desplegar. Si el repositorio no tiene tags, empieza en
+`v1.0.0`. Cada integración a `main` queda así asociada a una versión.
+
+### Requisitos del runner
+
+- Node.js 20 y npm disponibles (los usa el job `build`).
+- Acceso de escritura a `/var/www/html` para el usuario del runner.
+- El servidor sirve el frontend estático y hace *proxy* de `/api/` al backend de
+  su ambiente, porque la SPA usa rutas como `/dashboard` y sin
+  `try_files $uri $uri/ /index.html` una recarga directa devolvería 404.
 
 ## Principios de Diseño
 
