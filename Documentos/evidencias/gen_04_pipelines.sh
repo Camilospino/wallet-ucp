@@ -60,5 +60,7 @@ ok  test -> security-scan -> build -> smoke-test -> deploy_main  (push a main ->
 >> Los cuatro checks exigidos por la proteccion de main son test (20.x),
 >> test (22.x), security-scan y build: son los unicos que tambien corren
 >> en un Pull Request. deploy_main, smoke-test y version solo se ejecutan
->> en un push, asi que no se exigieron: habrian bloqueado el PR para siempre.
+>> en un push, asi que no se exigieron: GitHub los reportaria como skipped
+>> (y un check omitido cuenta como aprobado), por lo que exigirlos no
+>> habria bloqueado el PR, pero tampoco habria aportado validacion alguna.
 EOF

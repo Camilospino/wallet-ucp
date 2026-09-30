@@ -690,6 +690,9 @@ git --no-pager log --oneline -14
 ```
 
 ```
+afdb1a3 Merge pull request #1 from Camilospino/develop
+c682ccc Agrega el generador del historial de pipelines y lo regenera
+eaea274 Documenta el laboratorio 2: informe, evidencias y generacion del .docx
 3fa02bb Merge branch 'main' into develop
 06b5e92 Quita del arbol las carpetas vacias docker/ y docs/
 1dbba41 Relanza el pipeline con el runner restablecido
@@ -701,9 +704,6 @@ a9fe6b1 Merge branch 'develop' into main
 0a9015e Verifica el despliegue automatico tras corregir permisos de /var/www/html
 543efe2 Arregla el fallo "vite: not found" en el job build
 9dbd41e Dispara el pipeline para observar la instalacion de dependencias
-07003dd Desactiva la cache de npm y verifica el toolchain en el build
-aa13034 Limpia node_modules antes de instalar en el runner autoalojado
-7ae1741 Distingue los ambientes en la interfaz y enruta la API por NGINX
 ```
 
 > 📷 **CAPTURA 3.2** — Historial de commits del repositorio.
@@ -732,11 +732,20 @@ de este repositorio quedó así:
 | Require branches to be up to date | activado | El *Pull Request* tiene que incluir el `main` más reciente. |
 
 Los cuatro *checks* exigidos son precisamente los *jobs* que corren en un
-*Pull Request*. No se exigieron `deploy_main`, `smoke-test` ni `version` porque
-esos tres solo se ejecutan en un *push*, no al abrir un *Pull Request*:
-exigirlos habría dejado el *Pull Request* bloqueado para siempre. Tampoco se
-activó la casilla *Do not allow bypassing the above settings*, que en un
-proyecto de un solo autor dejaría el repositorio sin poder avanzar.
+*Pull Request*. No se exigieron `deploy_main`, `smoke-test` ni `version`, porque
+los tres están condicionados a `github.event_name == 'push'` y al abrir un
+*Pull Request* no llegan a ejecutarse. Vale la pena ser preciso sobre lo que
+eso significa: GitHub no los cuenta como *fallidos*, sino como ***skipped***, y
+un *check* omitido se considera aprobado a efectos de combinar. Es decir,
+exigirlos **no** habría bloqueado el *Pull Request* para siempre, como se suele
+suponer; simplemente no habría aportado ninguna validación, porque un *check*
+que nunca corre no puede aprobar ni reprobar nada. La regla queda así de
+efectiva: cuatro *checks* que de verdad se ejecutan en cada *Pull Request*.
+
+Tampoco se activó la casilla *Do not allow bypassing the above settings*, que
+impide saltarse las reglas incluso al propietario del repositorio. En un
+proyecto de un solo autor eso dejaría el repositorio sin poder avanzar si
+nadie más pudiera aprobar.
 
 > 📷 **CAPTURA 3.4** — Regla de protección de la rama `main` en GitHub, con los
 > cuatro *status checks* obligatorios listados.
@@ -748,6 +757,12 @@ Se abre un *Pull Request* de `develop` hacia `main` en la pestaña *Pull
 requests* del repositorio, donde se puede revisar el diff, dejar comentarios y
 **aprobarlo** antes de combinarlo.
 
+Para que la aprobación no sea un trámite de una sola persona, el repositorio
+tiene un segundo colaborador con permiso de escritura, `xcandres04`, que
+revisa y aprueba cada *Pull Request* antes de que se lo combine. La regla de
+protección exige **una** aprobación de alguien con acceso de escritura, y ese
+revisor no es el autor.
+
 > 📷 **CAPTURA 3.5** — Pull Request abierto de `develop` hacia `main`, con la
 > lista de checks del pipeline en verde y la aprobación visible antes de
 > combinar.
@@ -758,15 +773,28 @@ Al aprobar y combinar el *Pull Request*, GitHub hace el *merge* hacia `main`, y
 ese *push* a `main` es lo que dispara `deploy_main` y el job `version`, que crea
 la siguiente etiqueta `vX.Y.Z`.
 
-> 📷 **CAPTURA 3.6** — Pull Request marcado como *Merged*, con el commit de
-> combinación visible en el historial de `main`.
+> **Nota sobre el primer Pull Request.** El PR #1 (`develop` → `main`) sí llegó
+> a combinarse, pero lo hizo **saltándose la regla de aprobación**: mientras se
+> terminaba de poner en marcha el *runner* autoalojado, se marcó la casilla
+> *"Merge without waiting for requirements to be met"*, que GitHub solo ofrece al
+> propietario del repositorio. Se puede comprobar en el historial: ese PR figura
+> como *Merged* con *"No reviews"*, y el `main` avanzó igualmente. No se
+> corrigió rebobinando la rama, porque eso habría borrado la etiqueta `v1.0.4` y
+> hubiera obligado a volver a desplegar a Producción. Se deja registrado tal
+> cual, y el flujo completo **con aprobación de un segundo revisor** se
+> demuestra en el PR #2, que es el que ilustran las capturas siguientes.
+
+> 📷 **CAPTURA 3.6** — Pull Request marcado como *Merged*, con la aprobación del
+> segundo revisor y el commit de combinación visible en el historial de `main`.
 
 ### 3.7. Versionado por etiquetas
 
 Como extensión, el pipeline crea una etiqueta `vX.Y.Z` por cada despliegue a
 Producción. Al momento de redactar este informe el repositorio tenía las
-etiquetas `v1.0.0` a `v1.0.3`; la numeración crece sola con cada nuevo
-despliegue a Producción.
+etiquetas `v1.0.0` a `v1.0.4`; la numeración crece sola con cada nuevo
+despliegue a Producción. La `v1.0.4` la creó automáticamente el job `version`
+sobre el commit de combinación del PR #1, y es la prueba de que ese recorrido
+de despliegue se ejecutó de principio a fin.
 
 ```bash
 git --no-pager tag
