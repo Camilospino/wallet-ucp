@@ -1,10 +1,29 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
+import subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from docx_builder import DocxBuilder
 E = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(E, "..", "Laboratorio2_WalletUCP_Camilo.docx")
+REPO = os.path.abspath(os.path.join(E, "..", ".."))
+
+
+def git(*args):
+    """Salida real de un comando git, para que el documento no invente datos."""
+    r = subprocess.run(["git", "-C", REPO] + list(args),
+                       capture_output=True, text=True)
+    return r.stdout.rstrip() or r.stderr.rstrip()
+
+
+# Las etiquetas las crea el job `version` sola en cada despliegue a Produccion,
+# asi que leerlas del repositorio es la unica forma de que el texto no quede
+# desactualizado respecto a lo que el pipeline realmente publico.
+TAGS = [t for t in git("tag", "--sort=-v:refname").splitlines() if t.strip()]
+PRIMER_TAG = TAGS[-1] if TAGS else "v1.0.0"
+ULTIMO_TAG = TAGS[0] if TAGS else "v1.0.0"
+LOG = git("log", "--oneline", "-14")
+
 d = DocxBuilder()
 # -*- coding: utf-8 -*-
 d.p("LABORATORIO 2", b=True, size=30, color="1F3A93", align="center", space_after=40, space_before=1400)
@@ -205,16 +224,16 @@ d.p("El ambiente de QA se abre en http://wallet-ucp-qa.local:8080 y el de Produc
 d.h("3. Evidencias del repositorio", 1)
 d.h("3.1. Ramas, commits y etiquetas", 2)
 d.p("El repositorio tiene dos ramas de trabajo, que corresponden a los dos ambientes, más las etiquetas de versión creadas por el pipeline.")
-d.fig("repo", os.path.join(E, "ev_03_repositorio.png"), "Ramas del repositorio (develop y main), historial de commits, etiquetas v1.0.0 a v1.0.3, y el remoto en GitHub.")
+d.fig("repo", os.path.join(E, "ev_03_repositorio.png"), f"Ramas del repositorio (develop y main), historial de commits, etiquetas {PRIMER_TAG} a {ULTIMO_TAG}, y el remoto en GitHub.")
 d.tbl([
     ["Rama", "Ambiente", "Regla"],
     ["develop", "QA", "Recibe push directos; cada push dispara el despliegue a QA."],
     ["main", "Producción", "Está protegida: nada llega a main sin un Pull Request aprobado. Cada push a main dispara el despliegue a Producción."],
 ], widths=[18, 20, 62])
-d.p("El equivalente en GitHub del Merge Request de GitLab es el Pull Request: se abre de develop hacia main, se revisa el diff, se deja comentarios, se aprueba y se combina. Al combinar, ese push a main es lo que despliega a Producción. Las capturas de esa pantalla se toman manualmente, porque requieren la sesión iniciada en la cuenta de GitHub.")
+d.p("El equivalente en GitHub del Merge Request de GitLab es el Pull Request: se abre de develop hacia main, se revisa el diff, se deja comentarios, se aprueba y se combina. Al combinar, ese push a main es lo que despliega a Producción. Para que la aprobación no sea un trámite de una sola persona, el repositorio tiene un segundo colaborador con permiso de escritura, xcandres04, que revisa y aprueba cada Pull Request antes de combinarlo: la regla pide una aprobación de alguien con acceso de escritura, y ese revisor no es el autor. Las capturas de esa pantalla se toman manualmente, porque requieren la sesión iniciada en la cuenta de GitHub.")
 
 d.h("3.2. Versionado por etiquetas", 2)
-d.pf("Como extensión, el pipeline crea una etiqueta vX.Y.Z por cada despliegue a Producción, de manera que cada combinación a main queda asociada a una versión. Al momento de redactar este informe el repositorio tenía las etiquetas v1.0.0 a v1.0.3, visibles en la Figura {repo}; la numeración crece sola con cada nuevo despliegue.", "repo")
+d.pf(f"Como extensión, el pipeline crea una etiqueta vX.Y.Z por cada despliegue a Producción, de manera que cada combinación a main queda asociada a una versión. Al momento de redactar este informe el repositorio tenía las etiquetas {PRIMER_TAG} a {ULTIMO_TAG}, visibles en la Figura {{repo}}; la numeración crece sola con cada nuevo despliegue. La {ULTIMO_TAG} la creó automáticamente el job version sobre el commit de combinación del Pull Request, y es la prueba de que ese recorrido de despliegue se ejecutó de principio a fin.", "repo")
 
 d.h("4. Evidencias de los pipelines", 1)
 d.p("El pipeline está definido en .github/workflows/pipeline.yml y se dispara en cada push y cada Pull Request contra main y develop. Cada job hace una sola cosa y solo publica el artefacto si todo lo anterior pasó.")
@@ -245,11 +264,13 @@ d.bullets([
     "Require status checks to pass before merging: test (20.x), test (22.x), security-scan y build.",
     "Require branches to be up to date before merging: el PR tiene que incluir el main más reciente.",
 ])
-d.p("Los cuatro checks exigidos son precisamente los jobs que corren en un Pull Request. No se exigieron deploy_main, smoke-test ni version porque esos tres solo se ejecutan en un push, no al abrir un PR: exigirlos habría dejado el PR bloqueado para siempre. Tampoco se activó la casilla Do not allow bypassing the above settings, que en un proyecto de un solo autor dejaría el repositorio sin poder avanzar.")
+d.p("Los cuatro checks exigidos son precisamente los jobs que corren en un Pull Request. No se exigieron deploy_main, smoke-test ni version, porque los tres están condicionados a github.event_name == 'push' y al abrir un Pull Request no llegan a ejecutarse. Vale la pena ser preciso sobre lo que eso significa, porque es un error frecuente: GitHub no cuenta esos jobs como fallidos, sino como skipped, y un check omitido se considera aprobado a efectos de combinar. Es decir, exigirlos no habría bloqueado el Pull Request para siempre, como se suele suponer; simplemente no habría aportado ninguna validación, porque un check que nunca corre no puede aprobar ni reprobar nada. La regla queda así de efectiva: cuatro checks que de verdad se ejecutan en cada Pull Request.")
+d.p("Tampoco se activó la casilla Do not allow bypassing the above settings, que impide saltarse las reglas incluso al propietario del repositorio. En un proyecto de un solo autor eso dejaría el repositorio sin poder avanzar si nadie más pudiera aprobar.")
 d.fig("proteccion", os.path.join(E, "ev_09_proteccion_main.png"), "Regla de protección de la rama main en GitHub: Pull Request requerido, 1 aprobación, los cuatro status checks obligatorios y la rama al día antes de combinar.", max_width_in=6.9)
 
 d.h("4.4. El Pull Request, la aprobación y la combinación", 2)
-d.p("El equivalente en GitHub del Merge Request de GitLab es el Pull Request. Se abre de develop hacia main, se revisa el diff y, cuando los cuatro checks obligatorios están en verde y el PR está aprobado, se combina. Ese push a main es el que dispara deploy_main y el job version, que crea la siguiente etiqueta vX.Y.Z.")
+d.p("El equivalente en GitHub del Merge Request de GitLab es el Pull Request. Se abre de develop hacia main, se revisa el diff y, cuando los cuatro checks obligatorios están en verde y el PR está aprobado por un segundo revisor, se combina. Ese push a main es el que dispara deploy_main y el job version, que crea la siguiente etiqueta vX.Y.Z.")
+d.p("Nota sobre el primer Pull Request: el PR #1 (develop hacia main) sí llegó a combinarse, pero lo hizo saltándose la regla de aprobación. Mientras se terminaba de poner en marcha el runner autoalojado se marcó la casilla Merge without waiting for requirements to be met, que GitHub solo ofrece al propietario del repositorio. Se puede comprobar en el historial: ese PR figura como Merged con No reviews, y main avanzó igualmente. No se corrigió rebobinando la rama, porque eso habría borrado la etiqueta v1.0.4 y habría obligado a volver a desplegar a Producción. Se deja registrado tal cual, y el flujo completo con aprobación de un segundo revisor se demuestra en el PR #2, que es el que ilustran las dos capturas siguientes.")
 d.fig("pr_verde", os.path.join(E, "ev_10_pull_request_verde.png"), "Pull Request de develop hacia main con los cuatro checks obligatorios en verde y la aprobación registrada antes de combinar.", max_width_in=6.9)
 d.fig("pr_merged", os.path.join(E, "ev_11_pull_request_merged.png"), "El mismo Pull Request ya en estado Merged, con el commit de combinación visible.", max_width_in=6.9)
 
