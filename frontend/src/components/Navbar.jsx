@@ -20,7 +20,7 @@ export const Navbar = () => {
     <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
       <div className="container">
         <Link className="navbar-brand" to="/dashboard">
-          WalletUCP
+          WalletUCPT
         </Link>
         <span
           className="badge rounded-pill text-bg-warning me-2 align-self-center"

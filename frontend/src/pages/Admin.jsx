@@ -21,6 +21,11 @@ export default function Admin() {
       setLoading(false)
       return
     }
+    // Clearing the previous tab's data is what keeps the render from reading a
+    // key that does not exist: `data.users` while the wallets tab is selected
+    // is `undefined`, and `undefined.map` crashed the whole panel to a blank
+    // page. The new response repopulates `data` below.
+    setData(null)
     loadData()
   }, [activeTab, page, user])
 
@@ -61,7 +66,6 @@ export default function Admin() {
       setLoading(false)
     }
   }
-
   const handleBlockUser = async (userId) => {
     try {
       await adminAPI.blockUser(userId)
@@ -78,11 +82,6 @@ export default function Admin() {
     } catch (err) {
       setError('Error al desbloquear usuario')
     }
-  }
-
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleString('es-CO')
   }
 
   if (loading) {
@@ -159,7 +158,7 @@ export default function Admin() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.users.map((user) => (
+                  {(data.users || []).map((user) => (
                     <tr key={user.id}>
                       <td>{user.id}</td>
                       <td>{user.nombre} {user.apellido}</td>
@@ -218,7 +217,7 @@ export default function Admin() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.wallets.map((wallet) => (
+                  {(data.wallets || []).map((wallet) => (
                     <tr key={wallet.id}>
                       <td>{wallet.id}</td>
                       <td>{wallet.nombre} {wallet.apellido}</td>
@@ -258,7 +257,7 @@ export default function Admin() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.transactions.map((transaction) => (
+                  {(data.transactions || []).map((transaction) => (
                     <tr key={transaction.id}>
                       <td>{transaction.id}</td>
                       <td><code>{transaction.referencia}</code></td>
