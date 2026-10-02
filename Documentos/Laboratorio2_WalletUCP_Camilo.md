@@ -690,6 +690,8 @@ git --no-pager log --oneline -14
 ```
 
 ```
+e484120 Merge pull request #2 from Camilospino/develop
+d2267f9 Corrige la regla de los checks omitidos y documenta la aprobacion real
 afdb1a3 Merge pull request #1 from Camilospino/develop
 c682ccc Agrega el generador del historial de pipelines y lo regenera
 eaea274 Documenta el laboratorio 2: informe, evidencias y generacion del .docx
@@ -703,7 +705,6 @@ a389731 Relanza el pipeline con el runner restablecido
 a9fe6b1 Merge branch 'develop' into main
 0a9015e Verifica el despliegue automatico tras corregir permisos de /var/www/html
 543efe2 Arregla el fallo "vite: not found" en el job build
-9dbd41e Dispara el pipeline para observar la instalacion de dependencias
 ```
 
 > 📷 **CAPTURA 3.2** — Historial de commits del repositorio.
@@ -784,6 +785,11 @@ la siguiente etiqueta `vX.Y.Z`.
 > cual, y el flujo completo **con aprobación de un segundo revisor** se
 > demuestra en el PR #2, que es el que ilustran las capturas siguientes.
 
+El PR #2 (`develop` → `main`, commit `d2267f9`) sí siguió el flujo completo:
+`xcandres04` lo aprobó el 30 de septiembre de 2026 a las 09:01 UTC y se
+combinó un minuto después, sin usar el bypass. Ese `push` a `main` disparó
+`deploy_main` y el job `version`, que creó la etiqueta `v1.0.5`.
+
 > 📷 **CAPTURA 3.6** — Pull Request marcado como *Merged*, con la aprobación del
 > segundo revisor y el commit de combinación visible en el historial de `main`.
 
@@ -791,10 +797,11 @@ la siguiente etiqueta `vX.Y.Z`.
 
 Como extensión, el pipeline crea una etiqueta `vX.Y.Z` por cada despliegue a
 Producción. Al momento de redactar este informe el repositorio tenía las
-etiquetas `v1.0.0` a `v1.0.4`; la numeración crece sola con cada nuevo
-despliegue a Producción. La `v1.0.4` la creó automáticamente el job `version`
-sobre el commit de combinación del PR #1, y es la prueba de que ese recorrido
-de despliegue se ejecutó de principio a fin.
+etiquetas `v1.0.0` a `v1.0.5`; la numeración crece sola con cada nuevo
+despliegue a Producción. Las dos últimas las creó automáticamente el job
+`version`: la `v1.0.4` sobre el commit de combinación del PR #1, y la `v1.0.5`
+sobre el del PR #2. Cada una es la prueba de que ese recorrido de despliegue se
+ejecutó de principio a fin.
 
 ```bash
 git --no-pager tag

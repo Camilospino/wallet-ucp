@@ -24,6 +24,20 @@ const app = express();
 // actually running behind TLS in production.
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Behind NGINX the browser's real address arrives in X-Forwarded-For. Express
+// ignores that header unless it is told to trust the proxy, and
+// express-rate-limit then logs ERR_ERL_UNEXPECTED_X_FORWARDED_FOR and falls
+// back to the proxy's address: every client then shares ONE bucket, so the
+// login limit is counted across all users instead of per client.
+//
+// The hop count is 1, never `true`. NGINX is the only proxy in front of the
+// app, and `true` would let a direct client forge X-Forwarded-For to dodge the
+// rate limit entirely. Enabled only in production because the dev compose
+// talks to Express directly with no proxy in between.
+if (isProduction) {
+  app.set('trust proxy', 1);
+}
+
 app.use(helmet({
   strictTransportSecurity: isProduction
     ? { maxAge: 15552000, includeSubDomains: true }
