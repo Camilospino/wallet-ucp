@@ -176,7 +176,23 @@ acepta `client` como **último** parámetro, con el pool como valor por defecto.
 - `monto`: NUMERIC(15,2) (NOT NULL, CHECK (monto > 0))
 - `estado`: VARCHAR (CHECK IN ('PENDING','COMPLETED','FAILED','CANCELLED'))
 - `descripcion`: TEXT (opcional)
+- `tarjeta_origen_id`: INTEGER (FOREIGN KEY → tarjetas(id), NULLABLE) — tarjeta de la que sale el dinero (retiro, transferencia)
+- `tarjeta_destino_id`: INTEGER (FOREIGN KEY → tarjetas(id), NULLABLE) — tarjeta a la que llega (depósito, transferencia)
 - `created_at`: TIMESTAMP (DEFAULT now())
+
+#### `tarjetas`
+Cada usuario tiene **exactamente dos tarjetas**, una de crédito y una de
+débito, y **cada una con su propio saldo**. El saldo de la billetera es
+**siempre la suma de sus dos tarjetas**: toda operación actualiza la tarjeta y
+la billetera en la misma transacción SQL, bajo `SELECT ... FOR UPDATE`.
+Nunca se guarda el número completo ni el CVV, solo los últimos 4 dígitos.
+- `id`: SERIAL (PRIMARY KEY)
+- `usuario_id`: INTEGER (FOREIGN KEY → usuarios(id), NOT NULL)
+- `tipo`: VARCHAR (CHECK IN ('CREDIT','DEBIT')) — UNIQUE junto con `usuario_id`
+- `marca`: VARCHAR (CHECK IN ('VISA','MASTERCARD'))
+- `ultimos_digitos`: CHAR(4)
+- `saldo`: NUMERIC(15,2) (NOT NULL, CHECK (saldo >= 0))
+- `created_at`, `updated_at`: TIMESTAMP
 
 #### `movimientos`
 - `id`: SERIAL (PRIMARY KEY)
@@ -186,6 +202,7 @@ acepta `client` como **último** parámetro, con el pool como valor por defecto.
 - `monto`: NUMERIC(15,2) (NOT NULL, CHECK (monto > 0))
 - `saldo_anterior`: NUMERIC(15,2) (NOT NULL)
 - `saldo_resultante`: NUMERIC(15,2) (NOT NULL)
+- `tarjeta_id`: INTEGER (FOREIGN KEY → tarjetas(id), NULLABLE) — tarjeta cuyo saldo cambió
 - `created_at`: TIMESTAMP (DEFAULT now())
 
 ## Instalación
@@ -286,6 +303,27 @@ DB_PORT=5433
 ### Transferencias
 - `POST /api/transfers` - Realizar transferencia entre usuarios
 
+### Tarjetas
+- `GET /api/cards` - Las 2 tarjetas del usuario (crédito y débito) con su saldo
+
+Cada operación elige la tarjeta sobre la que actúa:
+- **Depósito** (`cardId`): tarjeta en la que se deposita.
+- **Retiro** (`cardId`): tarjeta de la que se retira. Solo cuenta el saldo de
+  esa tarjeta: el dinero de la otra no cubre el retiro.
+- **Transferencia** (`cardId` + `recipientCardType`): tarjeta propia de la que
+  sale el dinero y tipo de tarjeta del destinatario (`CREDIT` o `DEBIT`) a la
+  que llega. El remitente nunca ve las tarjetas ni los saldos del destinatario.
+
+Ambos campos son **opcionales**: si se omiten se usa la tarjeta de débito, así
+que los clientes de la API anteriores siguen funcionando. Una tarjeta ajena o
+inexistente responde `404 CARD_NOT_FOUND` y no se mueve dinero. En el
+historial, cada parte de una transferencia ve solo su propia tarjeta.
+
+**Migración de bases existentes:** volver a ejecutar
+`database/migrations/01-create_tables.sql` (es idempotente). Crea las dos
+tarjetas de cada usuario y pasa el saldo actual completo a la de débito, así
+que no se crea ni se pierde dinero.
+
 ### Transacciones
 - `GET /api/transactions` - Historial de transacciones (paginado)
 - `GET /api/transactions/:id` - Detalle de transacción
@@ -369,7 +407,8 @@ Response:
 POST /api/wallets/deposit
 Authorization: Bearer <token>
 {
-  "amount": 100000
+  "amount": 100000,
+  "cardId": 1
 }
 
 Response:
@@ -382,7 +421,8 @@ Response:
       "referencia": "TX-20260925-A8F92K",
       "tipo": "DEPOSIT",
       "monto": 100000.00,
-      "estado": "COMPLETED"
+      "estado": "COMPLETED",
+      "tarjeta_destino_id": 1
     },
     "wallet": {
       "saldo": 100000.00
@@ -397,7 +437,9 @@ POST /api/transfers
 Authorization: Bearer <token>
 {
   "recipientEmail": "user2@example.com",
-  "amount": 50000
+  "amount": 50000,
+  "cardId": 1,
+  "recipientCardType": "DEBIT"
 }
 
 Response:

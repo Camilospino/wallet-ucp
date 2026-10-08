@@ -25,6 +25,17 @@ const findByUserId = async (usuarioId, client = pool) => {
   return result.rows[0];
 };
 
+/**
+ * Fetches the wallets of several users in ONE query, so listing N users does
+ * not issue N extra round trips (the classic N+1 problem).
+ */
+const findByUserIds = async (usuarioIds, client = pool) => {
+  if (!usuarioIds.length) return [];
+  const query = 'SELECT * FROM billeteras WHERE usuario_id = ANY($1::int[])';
+  const result = await client.query(query, [usuarioIds]);
+  return result.rows;
+};
+
 const findById = async (id, client = pool) => {
   const query = 'SELECT * FROM billeteras WHERE id = $1';
   const result = await client.query(query, [id]);
@@ -87,6 +98,7 @@ const count = async (client = pool) => {
 module.exports = {
   create,
   findByUserId,
+  findByUserIds,
   findById,
   updateBalance,
   updateState,

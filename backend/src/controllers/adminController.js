@@ -18,7 +18,7 @@ const readPagination = (req, res) => {
   return parsePagination(req.query);
 };
 
-const getAllUsers = async (req, res) => {
+const getAllUsers = async (req, res, next) => {
   try {
     const pagination = readPagination(req, res);
     if (!pagination) return;
@@ -32,16 +32,11 @@ const getAllUsers = async (req, res) => {
       data: result
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al obtener usuarios',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 
-const getAllWallets = async (req, res) => {
+const getAllWallets = async (req, res, next) => {
   try {
     const pagination = readPagination(req, res);
     if (!pagination) return;
@@ -55,16 +50,11 @@ const getAllWallets = async (req, res) => {
       data: result
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al obtener billeteras',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 
-const getAllTransactions = async (req, res) => {
+const getAllTransactions = async (req, res, next) => {
   try {
     const pagination = readPagination(req, res);
     if (!pagination) return;
@@ -84,16 +74,11 @@ const getAllTransactions = async (req, res) => {
       data: result
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al obtener transacciones',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 
-const blockUser = async (req, res) => {
+const blockUser = async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await adminService.blockUser(id, req.user.userId);
@@ -104,16 +89,11 @@ const blockUser = async (req, res) => {
       data: { user: result }
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al bloquear usuario',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 
-const unblockUser = async (req, res) => {
+const unblockUser = async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await adminService.unblockUser(id);
@@ -124,12 +104,7 @@ const unblockUser = async (req, res) => {
       data: { user: result }
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al desbloquear usuario',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 

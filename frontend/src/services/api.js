@@ -36,10 +36,13 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error.response?.status
+    const code = error.response?.data?.error
 
-    // 403 on /auth/me means the account is blocked, 401 means the token is
-    // invalid/expired. In both cases the stored session is no longer usable.
-    if (status === 401 || status === 403) {
+    // 401 means the token is invalid/expired and 403 USER_BLOCKED means the
+    // account was blocked: in both cases the stored session is no longer usable.
+    // Any other 403 is a business rule (recipient blocked, admin-only route...)
+    // that the page must show, so it must NOT log the user out.
+    if (status === 401 || (status === 403 && code === 'USER_BLOCKED')) {
       const hadToken = Boolean(localStorage.getItem('token'))
       const isAuthRequest = error.config?.url?.includes('/auth/login')
 

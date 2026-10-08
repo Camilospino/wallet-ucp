@@ -20,7 +20,7 @@ export const Navbar = () => {
     <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
       <div className="container">
         <Link className="navbar-brand" to="/dashboard">
-          WalletUCPTygggg
+          WalletUCP
         </Link>
         <span
           className="badge rounded-pill text-bg-warning me-2 align-self-center"
@@ -63,6 +63,11 @@ export const Navbar = () => {
                 <li className="nav-item">
                   <Link className="nav-link" to="/transactions">
                     Movimientos
+                  </Link>
+                </li>
+                <li className="nav-item">
+                  <Link className="nav-link" to="/cards">
+                    Tarjetas
                   </Link>
                 </li>
                 <li className="nav-item">

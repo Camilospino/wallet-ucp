@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { walletAPI } from '../services/walletService'
-import { formatCurrency, formatDateTime } from '../utils/format'
+import { formatCurrency, formatDateTime, formatCard } from '../utils/format'
 
 const TIPOS = [
   { value: '', label: 'Todos los tipos' },
@@ -215,6 +215,7 @@ export default function Transactions() {
                     <th>Referencia</th>
                     <th>Tipo</th>
                     <th className="text-end">Monto</th>
+                    <th>Tarjeta</th>
                     <th>Estado</th>
                     <th>Fecha</th>
                   </tr>
@@ -226,6 +227,13 @@ export default function Transactions() {
                       <td>{TYPE_LABEL[transaction.tipo] || transaction.tipo}</td>
                       <td className="text-end fw-bold">
                         {formatCurrency(transaction.monto)}
+                      </td>
+                      <td className="small">
+                        {transaction.tarjeta_ultimos_digitos ? (
+                          <span>{formatCard(transaction)}</span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
                       </td>
                       <td>
                         <span className={`badge bg-${STATUS_BADGE[transaction.estado] || 'secondary'}`}>

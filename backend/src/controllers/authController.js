@@ -1,6 +1,6 @@
 const authService = require('../services/authService');
 const { validateRegister, validateLogin } = require('../validators/authValidator');
-const register = async (req, res) => {
+const register = async (req, res, next) => {
   try {
     const validation = validateRegister(req.body);
     if (!validation.isValid) {
@@ -20,16 +20,11 @@ const register = async (req, res) => {
       data: { user }
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al registrar usuario',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 
-const login = async (req, res) => {
+const login = async (req, res, next) => {
   try {
     const validation = validateLogin(req.body);
     if (!validation.isValid) {
@@ -49,16 +44,11 @@ const login = async (req, res) => {
       data: result
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al iniciar sesión',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 
-const me = async (req, res) => {
+const me = async (req, res, next) => {
   try {
     const user = await authService.getCurrentUser(req.user.userId);
 
@@ -68,12 +58,7 @@ const me = async (req, res) => {
       data: { user }
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al obtener usuario',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 

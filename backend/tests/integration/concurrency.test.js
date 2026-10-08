@@ -80,26 +80,49 @@ describe('Control de concurrencia', () => {
     // Start at 0 so every cent of the balance is explained by a movement.
     const { token, wallet } = await createUserAndLogin({ email: 'ledger@test.com', saldo: 0 });
 
-    await Promise.all([
-      request(app).post('/api/wallets/deposit').set('Authorization', `Bearer ${token}`)
-        .send({ amount: 1000 }),
-      request(app).post('/api/wallets/withdraw').set('Authorization', `Bearer ${token}`)
-        .send({ amount: 500 }),
-      request(app).post('/api/wallets/deposit').set('Authorization', `Bearer ${token}`)
-        .send({ amount: 250 }),
-      request(app).post('/api/wallets/withdraw').set('Authorization', `Bearer ${token}`)
-        .send({ amount: 100 })
-    ]);
+    const OPERATIONS = [
+      ['deposit', 1000],
+      ['withdraw', 500],
+      ['deposit', 250],
+      ['withdraw', 100]
+    ];
 
-    const movementsBefore = await countRows('movimientos');
+    const results = await Promise.all(
+      OPERATIONS.map(([op, amount]) =>
+        request(app).post(`/api/wallets/${op}`).set('Authorization', `Bearer ${token}`)
+          .send({ amount })
+      )
+    );
+
+    // The lock order is decided by PostgreSQL, not by the order of the array:
+    // a withdrawal that wins the race against the deposits is rightly rejected
+    // for insufficient balance. So the expected balance is derived from what
+    // actually succeeded, and every rejection must be exactly that case.
+    let expected = 0;
+    results.forEach((res, i) => {
+      const [op, amount] = OPERATIONS[i];
+      if (res.status === 200) {
+        expected += op === 'deposit' ? amount : -amount;
+      } else {
+        expect(op).toBe('withdraw');
+        expect(res.body.error).toBe('INSUFFICIENT_BALANCE');
+      }
+    });
+
+    // Both deposits can never fail, so there is always at least 1250 credited.
+    expect(results[0].status).toBe(200);
+    expect(results[2].status).toBe(200);
+
+    const succeeded = results.filter((r) => r.status === 200).length;
     const { rows } = await (require('../setup/helpers').pool).query(
       `SELECT COALESCE(SUM(CASE WHEN tipo = 'CREDIT' THEN monto ELSE -monto END), 0) AS total
        FROM movimientos WHERE wallet_id = $1`,
       [wallet.id]
     );
 
-    expect(await getBalance(wallet.id)).toBe(650);
-    expect(parseFloat(rows[0].total)).toBe(650);
-    expect(movementsBefore).toBeGreaterThan(0);
+    expect(await getBalance(wallet.id)).toBe(expected);
+    expect(parseFloat(rows[0].total)).toBe(expected);
+    // Exactly one movement per successful operation, none for the rejected ones.
+    expect(await countRows('movimientos')).toBe(succeeded);
   });
 });

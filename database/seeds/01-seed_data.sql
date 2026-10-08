@@ -102,3 +102,15 @@ BEGIN
     UPDATE billeteras SET saldo = 25000.00 WHERE id = user2_wallet_id;
 
 END $$;
+
+-- Every user owns a credit and a debit card. The schema already backfills
+-- them, but at that point the seed users did not exist yet, so they are
+-- created here, AFTER the balances above are final: the whole balance goes to
+-- the debit card, keeping wallet balance = sum of its cards.
+INSERT INTO tarjetas (usuario_id, tipo, marca, ultimos_digitos, saldo)
+SELECT b.usuario_id, c.tipo, c.marca,
+       LPAD((FLOOR(RANDOM() * 10000))::INT::TEXT, 4, '0'),
+       CASE WHEN c.tipo = 'DEBIT' THEN b.saldo ELSE 0 END
+FROM billeteras b
+CROSS JOIN (VALUES ('CREDIT', 'VISA'), ('DEBIT', 'MASTERCARD')) AS c(tipo, marca)
+ON CONFLICT (usuario_id, tipo) DO NOTHING;

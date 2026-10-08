@@ -3,7 +3,8 @@ const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
 const userRepository = require('../repositories/userRepository');
 const walletRepository = require('../repositories/walletRepository');
-const { ERROR_CODES } = require('../config/constants');
+const cardService = require('./cardService');
+const { ERROR_CODES, USER_STATES } = require('../config/constants');
 
 /**
  * Strips sensitive fields from a user row before it leaves the service layer.
@@ -29,8 +30,8 @@ const register = async (nombre, apellido, email, password, telefono) => {
   const saltRounds = parseInt(process.env.BCRYPT_ROUNDS) || 10;
   const passwordHash = await bcrypt.hash(password, saltRounds);
 
-  // The user and its wallet must be created together: if the wallet insert
-  // failed we would end up with a user that can never do anything.
+  // The user, its wallet and its two cards must be created together: if any
+  // insert failed we would end up with a user that can never do anything.
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -45,6 +46,8 @@ const register = async (nombre, apellido, email, password, telefono) => {
     );
 
     await walletRepository.create(user.id, client);
+    // Every user owns a credit and a debit card from the start, both at 0.
+    await cardService.createDefaultCards(user.id, client);
 
     await client.query('COMMIT');
 
@@ -77,20 +80,23 @@ const login = async (email, password) => {
     };
   }
 
-  if (user.estado !== 'ACTIVE') {
-    throw {
-      statusCode: 403,
-      code: ERROR_CODES.USER_BLOCKED,
-      message: 'Usuario bloqueado'
-    };
-  }
-
+  // The password is checked BEFORE the account state: otherwise anyone could
+  // learn that an email belongs to a blocked account without knowing its
+  // password.
   const isPasswordValid = await bcrypt.compare(password, user.password_hash);
   if (!isPasswordValid) {
     throw {
       statusCode: 401,
       code: ERROR_CODES.AUTHENTICATION_ERROR,
       message: 'Credenciales inválidas'
+    };
+  }
+
+  if (user.estado !== USER_STATES.ACTIVE) {
+    throw {
+      statusCode: 403,
+      code: ERROR_CODES.USER_BLOCKED,
+      message: 'Usuario bloqueado'
     };
   }
 
@@ -133,7 +139,7 @@ const getCurrentUser = async (userId) => {
     };
   }
 
-  if (user.estado !== 'ACTIVE') {
+  if (user.estado !== USER_STATES.ACTIVE) {
     throw {
       statusCode: 403,
       code: ERROR_CODES.USER_BLOCKED,

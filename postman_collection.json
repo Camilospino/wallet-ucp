@@ -19,6 +19,26 @@
       "key": "adminToken",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "creditCardId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "debitCardId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "foreignCardId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "creditSaldo",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -70,7 +90,7 @@
                 "exec": [
                   "const body = pm.response.json();",
                   "pm.test(\"Login exitoso\", () => pm.expect(body.success).to.eql(true));",
-                  "pm.test(\"Rol correcto\", () => pm.expect(body.data.user.rol).to.eql(\"admin\"));",
+                  "pm.test(\"Rol correcto\", () => pm.expect(body.data.user.rol).to.eql(\"ADMIN\"));",
                   "pm.collectionVariables.set(\"adminToken\", body.data.token);"
                 ]
               }
@@ -101,7 +121,7 @@
                 "exec": [
                   "const body = pm.response.json();",
                   "pm.test(\"Login exitoso\", () => pm.expect(body.success).to.eql(true));",
-                  "pm.test(\"Rol correcto\", () => pm.expect(body.data.user.rol).to.eql(\"user\"));",
+                  "pm.test(\"Rol correcto\", () => pm.expect(body.data.user.rol).to.eql(\"USER\"));",
                   "pm.collectionVariables.set(\"userToken\", body.data.token);"
                 ]
               }
@@ -294,6 +314,239 @@
             },
             "url": "{{baseUrl}}/api/wallets/deposit"
           }
+        }
+      ]
+    },
+    {
+      "name": "2b. Tarjetas (credito y debito con saldo propio)",
+      "item": [
+        {
+          "name": "Ver tarjetas de ADMIN (guarda una ajena)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/cards"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"foreignCardId\", body.data.cards[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ver mis tarjetas (guarda los ids)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/cards"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Exactamente 2 tarjetas\", () => pm.expect(body.data.cards).to.have.length(2));",
+                  "const credit = body.data.cards.find((c) => c.tipo === \"CREDIT\");",
+                  "const debit = body.data.cards.find((c) => c.tipo === \"DEBIT\");",
+                  "pm.test(\"Una de credito y una de debito\", () => { pm.expect(credit).to.exist; pm.expect(debit).to.exist; });",
+                  "pm.collectionVariables.set(\"creditCardId\", credit.id);",
+                  "pm.collectionVariables.set(\"debitCardId\", debit.id);",
+                  "pm.collectionVariables.set(\"creditSaldo\", credit.saldo);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Depositar 10000 en la tarjeta de credito",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/wallets/deposit",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10000,\n  \"cardId\": {{creditCardId}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"El dinero entra a la tarjeta de credito\", () => {",
+                  "  pm.expect(body.data.card.tipo).to.eql(\"CREDIT\");",
+                  "  pm.expect(body.data.card.saldo).to.eql(Number(pm.collectionVariables.get(\"creditSaldo\")) + 10000);",
+                  "});",
+                  "pm.collectionVariables.set(\"creditSaldo\", body.data.card.saldo);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retirar de credito mas de su saldo (espera 400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/wallets/withdraw",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 999999999,\n  \"cardId\": {{creditCardId}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Saldo insuficiente en la tarjeta\", () => pm.expect(pm.response.json().error).to.eql(\"INSUFFICIENT_BALANCE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Transferir 1000 desde credito a la tarjeta de debito de user2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/transfers",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientEmail\": \"user2@example.com\",\n  \"amount\": 1000,\n  \"cardId\": {{creditCardId}},\n  \"recipientCardType\": \"DEBIT\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Sale de la tarjeta de credito\", () => pm.expect(body.data.card.saldo).to.eql(Number(pm.collectionVariables.get(\"creditSaldo\")) - 1000));",
+                  "pm.test(\"No expone la tarjeta del destinatario\", () => pm.expect(body.data.transaction).to.not.have.property(\"tarjeta_destino_id\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Usar la tarjeta de otro usuario (espera 404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/wallets/deposit",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100,\n  \"cardId\": {{foreignCardId}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"CARD_NOT_FOUND\", () => pm.expect(pm.response.json().error).to.eql(\"CARD_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tipo de tarjeta destino invalido (espera 422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/transfers",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientEmail\": \"user2@example.com\",\n  \"amount\": 100,\n  \"recipientCardType\": \"PREPAGO\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },

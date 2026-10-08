@@ -1,4 +1,5 @@
 const { ERROR_CODES } = require('../config/constants');
+const { validateOptionalCardId, validateOptionalCardType } = require('./cardValidator');
 
 const MAX_AMOUNT = 999999999999.99;
 
@@ -35,9 +36,13 @@ const buildResult = (errors) => ({
   errorCode: errors.length > 0 ? ERROR_CODES.VALIDATION_ERROR : null
 });
 
-const validateDeposit = (data) => buildResult(validateAmount(data.amount));
+// `cardId` is optional in every operation (the debit card is used when it is
+// missing); when present it must be an id.
+const validateDeposit = (data) =>
+  buildResult([...validateAmount(data.amount), ...validateOptionalCardId(data.cardId)]);
 
-const validateWithdraw = (data) => buildResult(validateAmount(data.amount));
+const validateWithdraw = (data) =>
+  buildResult([...validateAmount(data.amount), ...validateOptionalCardId(data.cardId)]);
 
 const validateTransfer = (data) => {
   const errors = [];
@@ -47,6 +52,8 @@ const validateTransfer = (data) => {
   }
 
   errors.push(...validateAmount(data.amount));
+  errors.push(...validateOptionalCardId(data.cardId));
+  errors.push(...validateOptionalCardType(data.recipientCardType));
 
   return buildResult(errors);
 };

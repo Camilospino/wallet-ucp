@@ -1,7 +1,7 @@
 const walletService = require('../services/walletService');
 const { validateTransfer } = require('../validators/walletValidator');
 
-const transfer = async (req, res) => {
+const transfer = async (req, res, next) => {
   try {
     const validation = validateTransfer(req.body);
     if (!validation.isValid) {
@@ -12,21 +12,18 @@ const transfer = async (req, res) => {
       });
     }
 
-    const { recipientEmail, amount } = req.body;
-    const result = await walletService.transfer(req.user.userId, recipientEmail, amount);
+    const { recipientEmail, amount, cardId, recipientCardType } = req.body;
+    const result = await walletService.transfer(
+      req.user.userId, recipientEmail, amount, cardId, recipientCardType
+    );
 
     res.status(200).json({
       success: true,
       message: 'Transferencia realizada correctamente',
-      data: { transaction: result.transaction }
+      data: { transaction: result.transaction, card: result.card }
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al realizar transferencia',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 

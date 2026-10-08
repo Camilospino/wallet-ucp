@@ -59,6 +59,14 @@ router.get('/wallet', authMiddleware, walletController.getWallet);
  *                 type: number
  *                 format: decimal
  *                 example: 100000
+ *               cardId:
+ *                 type: integer
+ *                 nullable: true
+ *                 example: 1
+ *                 description: >
+ *                   Optional. Id of one of the user's own cards (GET /api/cards).
+ *                   Unknown or foreign cards answer 404 CARD_NOT_FOUND. When
+ *                   omitted, the debit card is used.
  *     responses:
  *       200:
  *         description: Deposit successful
@@ -108,6 +116,14 @@ router.post('/wallets/deposit', authMiddleware, financialRateLimiter, walletCont
  *                 type: number
  *                 format: decimal
  *                 example: 50000
+ *               cardId:
+ *                 type: integer
+ *                 nullable: true
+ *                 example: 1
+ *                 description: >
+ *                   Optional. Id of one of the user's own cards (GET /api/cards).
+ *                   Unknown or foreign cards answer 404 CARD_NOT_FOUND. When
+ *                   omitted, the debit card is used.
  *     responses:
  *       200:
  *         description: Withdrawal successful

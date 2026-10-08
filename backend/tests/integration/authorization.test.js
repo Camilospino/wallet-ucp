@@ -205,3 +205,81 @@ describe('Administracion de usuarios', () => {
       .expect(200);
   });
 });
+
+describe('Validez del token frente a cambios en la cuenta', () => {
+  beforeEach(resetDatabase);
+
+  it('un token emitido antes del bloqueo deja de servir de inmediato', async () => {
+    const admin = await createUserAndLogin({ email: 'admin@test.com', rol: USER_ROLES.ADMIN });
+    const victim = await createUserAndLogin({ email: 'victima@test.com', saldo: 10000 });
+
+    await request(app)
+      .patch(`/api/admin/users/${victim.user.id}/block`)
+      .set('Authorization', `Bearer ${admin.token}`)
+      .expect(200);
+
+    // Ni siquiera las rutas de solo lectura aceptan el token anterior.
+    const res = await request(app)
+      .get('/api/transactions')
+      .set('Authorization', `Bearer ${victim.token}`)
+      .expect(403);
+    expect(res.body.error).toBe('USER_BLOCKED');
+  });
+
+  it('el rol se toma de la base de datos, no del token', async () => {
+    const admin = await createUserAndLogin({ email: 'admin@test.com', rol: USER_ROLES.ADMIN });
+
+    await pool.query('UPDATE usuarios SET rol = $1 WHERE id = $2', [USER_ROLES.USER, admin.user.id]);
+
+    await request(app)
+      .get('/api/admin/users')
+      .set('Authorization', `Bearer ${admin.token}`)
+      .expect(403);
+  });
+
+  it('un token de un usuario que ya no existe responde 401', async () => {
+    const { token, user } = await createUserAndLogin({ email: 'borrado@test.com' });
+
+    await pool.query('DELETE FROM usuarios WHERE id = $1', [user.id]);
+
+    await request(app)
+      .get('/api/wallet')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+  });
+});
+
+describe('Validacion del parametro :id', () => {
+  beforeEach(resetDatabase);
+
+  it.each(['abc', '0', '-1', '1.5', '99999999999'])(
+    'GET /api/transactions/%s responde 422 en vez de 500',
+    async (id) => {
+      const { token } = await createUserAndLogin({ email: 'u1@test.com' });
+
+      const res = await request(app)
+        .get(`/api/transactions/${id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(422);
+      expect(res.body.error).toBe('VALIDATION_ERROR');
+    }
+  );
+
+  it('PATCH /api/admin/users/abc/block responde 422', async () => {
+    const admin = await createUserAndLogin({ email: 'admin@test.com', rol: USER_ROLES.ADMIN });
+
+    await request(app)
+      .patch('/api/admin/users/abc/block')
+      .set('Authorization', `Bearer ${admin.token}`)
+      .expect(422);
+  });
+});
+
+describe('GET /health', () => {
+  it('confirma que la base de datos responde', async () => {
+    const res = await request(app).get('/health').expect(200);
+
+    expect(res.body.status).toBe('OK');
+    expect(res.body.database).toBe('OK');
+  });
+});

@@ -10,6 +10,10 @@ const walletRoutes = require('./routes/walletRoutes');
 const transferRoutes = require('./routes/transferRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const cardRoutes = require('./routes/cardRoutes');
+
+const pool = require('./config/database');
+const logger = require('./utils/logger');
 
 const { errorHandler, notFoundHandler } = require('./middlewares/errorMiddleware');
 const { generalRateLimiter } = require('./middlewares/rateLimitMiddleware');
@@ -68,11 +72,28 @@ app.use('/api', userRoutes);
 app.use('/api', walletRoutes);
 app.use('/api', transferRoutes);
 app.use('/api', transactionRoutes);
+app.use('/api', cardRoutes);
 app.use('/api', adminRoutes);
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+// Health check. It also pings PostgreSQL: an API that cannot reach its
+// database cannot serve a single wallet operation, so reporting OK there would
+// make the smoke test and any monitor pass while the app is actually down.
+//
+// The ping has its own deadline: a query on a connection whose server vanished
+// does not fail, it hangs, so without it the check would never answer 503.
+const HEALTH_DB_TIMEOUT_MS = 3000;
+
+app.get('/health', async (req, res) => {
+  try {
+    await pool.query({ text: 'SELECT 1', query_timeout: HEALTH_DB_TIMEOUT_MS });
+    res.json({ status: 'OK', database: 'OK', timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error('Health check: la base de datos no responde', {
+      requestId: req.requestId,
+      error: error.message
+    });
+    res.status(503).json({ status: 'ERROR', database: 'ERROR', timestamp: new Date().toISOString() });
+  }
 });
 
 // Root: this server only exposes JSON, so point people at the right URLs
@@ -88,6 +109,7 @@ app.get('/', (req, res) => {
       wallet: '/api/wallet',
       transfers: '/api/transfers',
       transactions: '/api/transactions',
+      cards: '/api/cards',
       admin: '/api/admin'
     }
   });

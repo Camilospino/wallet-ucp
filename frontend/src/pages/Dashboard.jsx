@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from 'react'
-import { formatCurrency } from '../utils/format'
+import { formatCurrency, formatCard } from '../utils/format'
 import { Link } from 'react-router-dom'
 import { walletAPI } from '../services/walletService'
+import { PaymentCard } from '../components/PaymentCard'
+
+const TYPE_LABEL = {
+  DEPOSIT: 'Depósito',
+  WITHDRAW: 'Retiro',
+  TRANSFER: 'Transferencia'
+}
+
+const STATUS_LABEL = {
+  COMPLETED: 'Completada',
+  PENDING: 'Pendiente',
+  FAILED: 'Fallida',
+  CANCELLED: 'Cancelada'
+}
 
 export default function Dashboard() {
   const [walletData, setWalletData] = useState(null)
@@ -60,6 +74,16 @@ export default function Dashboard() {
             </p>
           </div>
 
+          {walletData.cards && walletData.cards.length > 0 && (
+            <div className="row g-3 mb-4">
+              {walletData.cards.map((card) => (
+                <div className="col-md-6" key={card.id}>
+                  <PaymentCard card={card} />
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="row mb-4">
             <div className="col-md-3">
               <Link to="/deposit" className="quick-action-btn">
@@ -99,11 +123,16 @@ export default function Dashboard() {
                     >
                       <div className="d-flex justify-content-between align-items-center">
                         <div>
+                          {/* CREDIT/DEBIT here is money in/out of the wallet,
+                              not the card type, so it is labelled Ingreso/Egreso. */}
                           <strong>
-                            {movement.tipo === 'CREDIT' ? 'Crédito' : 'Débito'}
+                            {movement.tipo === 'CREDIT' ? 'Ingreso' : 'Egreso'}
                           </strong>
                           <p className="mb-0 text-muted">
-                            {movement.transaction_tipo} - {movement.transaction_estado}
+                            {TYPE_LABEL[movement.transaction_tipo] || movement.transaction_tipo}
+                            {' · '}
+                            {STATUS_LABEL[movement.transaction_estado] || movement.transaction_estado}
+                            {movement.tarjeta_ultimos_digitos && <> · {formatCard(movement)}</>}
                           </p>
                         </div>
                         <div className="text-end">

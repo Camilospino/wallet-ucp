@@ -13,7 +13,7 @@ vi.mock('./api', () => ({
   }
 }))
 
-const { walletAPI, adminAPI } = await import('./walletService')
+const { walletAPI, adminAPI, cardAPI } = await import('./walletService')
 
 describe('walletAPI', () => {
   beforeEach(() => {
@@ -122,5 +122,45 @@ describe('adminAPI', () => {
     await adminAPI.unblockUser(7)
 
     expect(mockPatch).toHaveBeenCalledWith('/api/admin/users/7/unblock')
+  })
+})
+describe('cardId en las operaciones', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPost.mockResolvedValue({ data: { success: true } })
+  })
+
+  it('envía el cardId elegido en depósito, retiro y transferencia', async () => {
+    await walletAPI.deposit(1000, 7)
+    await walletAPI.withdraw(500, 7)
+    await walletAPI.transfer('user2@example.com', 2500, 7)
+
+    expect(mockPost).toHaveBeenCalledWith('/api/wallets/deposit', { amount: 1000, cardId: 7 })
+    expect(mockPost).toHaveBeenCalledWith('/api/wallets/withdraw', { amount: 500, cardId: 7 })
+    expect(mockPost).toHaveBeenCalledWith('/api/transfers', {
+      recipientEmail: 'user2@example.com', amount: 2500, cardId: 7
+    })
+  })
+
+  it('envía la tarjeta del destinatario elegida en la transferencia', async () => {
+    await walletAPI.transfer('user2@example.com', 2500, 7, 'CREDIT')
+
+    expect(mockPost).toHaveBeenCalledWith('/api/transfers', {
+      recipientEmail: 'user2@example.com', amount: 2500, cardId: 7, recipientCardType: 'CREDIT'
+    })
+  })
+})
+
+describe('cardAPI', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('lista las tarjetas con GET /api/cards', async () => {
+    mockGet.mockResolvedValue({ data: { data: { cards: [] } } })
+
+    await cardAPI.getCards()
+
+    expect(mockGet).toHaveBeenCalledWith('/api/cards')
   })
 })

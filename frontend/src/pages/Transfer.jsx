@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { walletAPI, userAPI } from '../services/walletService'
-import { formatCurrency } from '../utils/format'
+import { CARD_TYPE_LABEL, formatCurrency, formatCard } from '../utils/format'
+import { CardPicker } from '../components/CardPicker'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -14,19 +15,17 @@ export default function Transfer() {
   // Recipient preview, so the user confirms a name instead of a blind email.
   const [recipient, setRecipient] = useState(null)
   const [recipientStatus, setRecipientStatus] = useState('idle') // idle | loading | found | notfound | error
-  const [saldo, setSaldo] = useState(null)
 
   const [confirming, setConfirming] = useState(false)
 
+  // Sender's card the money leaves from, and the recipient's card type it
+  // arrives on (the sender never sees the recipient's cards or balances).
+  const [card, setCard] = useState(null)
+  const [recipientCardType, setRecipientCardType] = useState('DEBIT')
+  const [refreshKey, setRefreshKey] = useState(0)
+
   const navigate = useNavigate()
   const debounceRef = useRef(null)
-
-  // Load the balance once, to show what would be left after the transfer.
-  useEffect(() => {
-    walletAPI.getWallet()
-      .then((res) => setSaldo(parseFloat(res.data.wallet.saldo)))
-      .catch(() => setSaldo(null))
-  }, [])
 
   // Debounced lookup: only fires once the email looks valid and typing paused.
   useEffect(() => {
@@ -56,6 +55,8 @@ export default function Transfer() {
 
   const amount = parseFloat(formData.amount)
   const amountValid = Number.isFinite(amount) && amount > 0
+  // Only the chosen card counts: money on the other card cannot cover it.
+  const saldo = card ? card.saldo : null
   const remaining = saldo !== null && amountValid ? saldo - amount : null
   const exceedsBalance = amountValid && saldo !== null && amount > saldo
 
@@ -63,7 +64,8 @@ export default function Transfer() {
     EMAIL_RE.test(formData.recipientEmail.trim()) &&
     amountValid &&
     !exceedsBalance &&
-    recipientStatus === 'found'
+    recipientStatus === 'found' &&
+    Boolean(card)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -80,13 +82,18 @@ export default function Transfer() {
 
     setLoading(true)
     try {
-      await walletAPI.transfer(formData.recipientEmail.trim().toLowerCase(), amount)
+      await walletAPI.transfer(
+        formData.recipientEmail.trim().toLowerCase(), amount, card.id, recipientCardType
+      )
       setSuccess(`Transferencia a ${recipient.nombre} realizada exitosamente`)
       setFormData({ recipientEmail: '', amount: '' })
       setRecipient(null)
       setRecipientStatus('idle')
       setConfirming(false)
-      setTimeout(() => navigate('/dashboard'), 2000)
+      setRecipientCardType('DEBIT')
+      // Show the new card balance before going back to the dashboard.
+      setRefreshKey((key) => key + 1)
+      setTimeout(() => navigate('/dashboard'), 2500)
     } catch (err) {
       setError(err.response?.data?.message || 'Error al realizar transferencia')
       setConfirming(false)
@@ -158,6 +165,19 @@ export default function Transfer() {
                 )}
               </div>
 
+              <CardPicker
+                value={card?.id}
+                onChange={(selected) => {
+                  setCard(selected)
+                  setConfirming(false)
+                }}
+                label="¿De qué tarjeta sale el dinero?"
+                amount={formData.amount}
+                checkFunds
+                disabled={confirming || loading}
+                refreshKey={refreshKey}
+              />
+
               <div className="mb-3">
                 <label htmlFor="amount" className="form-label">Monto a transferir</label>
                 <input
@@ -181,7 +201,8 @@ export default function Transfer() {
 
                 {exceedsBalance && (
                   <div className="invalid-feedback d-block">
-                    El monto supera tu saldo disponible.
+                    El monto supera el saldo de tu tarjeta de {CARD_TYPE_LABEL[card.tipo].toLowerCase()}.
+                    Elige la otra tarjeta o un monto menor.
                   </div>
                 )}
 
@@ -193,25 +214,57 @@ export default function Transfer() {
 
                 {saldo !== null && (
                   <small className="text-muted d-block">
-                    Saldo disponible: <strong>{formatCurrency(saldo)}</strong>
+                    Saldo de la tarjeta: <strong>{formatCurrency(saldo)}</strong>
                   </small>
                 )}
 
                 {remaining !== null && !exceedsBalance && (
                   <small className="text-muted d-block">
-                    Saldo después de transferir: <strong>{formatCurrency(remaining)}</strong>
+                    La tarjeta quedará con: <strong>{formatCurrency(remaining)}</strong>
                   </small>
                 )}
               </div>
+
+              {recipientStatus === 'found' && recipient && (
+                <div className="mb-3">
+                  <span className="form-label d-block">
+                    ¿A qué tarjeta de {recipient.nombre} llega el dinero?
+                  </span>
+                  <div className="btn-group w-100" role="radiogroup">
+                    {['CREDIT', 'DEBIT'].map((tipo) => (
+                      <React.Fragment key={tipo}>
+                        <input
+                          type="radio"
+                          className="btn-check"
+                          name="recipientCardType"
+                          id={`recipient-${tipo}`}
+                          value={tipo}
+                          checked={recipientCardType === tipo}
+                          onChange={() => {
+                            setRecipientCardType(tipo)
+                            setConfirming(false)
+                          }}
+                          disabled={confirming || loading}
+                        />
+                        <label className="btn btn-outline-primary" htmlFor={`recipient-${tipo}`}>
+                          Tarjeta de {CARD_TYPE_LABEL[tipo].toLowerCase()}
+                        </label>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {confirming ? (
                 <div className="alert alert-info">
                   <p className="mb-2">
                     Vas a transferir <strong>{formatCurrency(amount)}</strong> a{' '}
-                    <strong>{recipient.nombre}</strong>.
+                    <strong>{recipient.nombre}</strong> desde tu tarjeta{' '}
+                    <strong>{formatCard(card)}</strong>. Le llegará a su tarjeta de{' '}
+                    <strong>{CARD_TYPE_LABEL[recipientCardType].toLowerCase()}</strong>.
                   </p>
                   <p className="mb-3 text-muted small">
-                    Te quedarás con {formatCurrency(remaining)}.
+                    Tu tarjeta de {CARD_TYPE_LABEL[card.tipo].toLowerCase()} quedará con {formatCurrency(remaining)}.
                   </p>
                   <div className="d-flex gap-2">
                     <button
@@ -242,7 +295,7 @@ export default function Transfer() {
                   </button>
                   {!canSubmit && (
                     <small className="text-muted d-block text-center mt-2">
-                      Completa un email válido con destinatario encontrado y un monto dentro de tu saldo.
+                      Completa un email válido con destinatario encontrado y un monto que tu tarjeta pueda cubrir.
                     </small>
                   )}
                   <div className="text-center mt-3">

@@ -126,3 +126,90 @@ body {
 .quick-action-btn span {
   font-weight: 500;
 }
+
+/* Payment cards (credit / debit) shown as selectable tiles */
+.pay-card {
+  position: relative;
+  width: 100%;
+  border: 3px solid transparent;
+  border-radius: 14px;
+  padding: 16px 18px;
+  color: #fff;
+  text-align: left;
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.pay-card--credit {
+  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+}
+
+.pay-card--debit {
+  background: linear-gradient(135deg, #11998e 0%, #2c7a5b 100%);
+}
+
+button.pay-card {
+  cursor: pointer;
+}
+
+button.pay-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+button.pay-card:focus-visible {
+  outline: 3px solid #ffc107;
+  outline-offset: 2px;
+}
+
+button.pay-card:disabled {
+  cursor: not-allowed;
+}
+
+.pay-card--unselected {
+  opacity: 0.75;
+  filter: saturate(0.6);
+}
+
+.pay-card--selected {
+  border-color: #ffc107;
+}
+
+.pay-card__type {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pay-card__number {
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  opacity: 0.9;
+}
+
+.pay-card__balance {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.pay-card__check {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: #ffc107;
+  color: #212529;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+}

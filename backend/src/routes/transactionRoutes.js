@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const transactionController = require('../controllers/transactionController');
+const { validateIdParam } = require('../middlewares/validateIdParam');
 const { authMiddleware } = require('../middlewares/authMiddleware');
 
 /**
@@ -98,7 +99,9 @@ router.get('/transactions', authMiddleware, transactionController.getTransaction
  *         description: Not authorized to view this transaction
  *       404:
  *         description: Transaction not found
+ *       422:
+ *         description: The id is not a positive integer
  */
-router.get('/transactions/:id', authMiddleware, transactionController.getTransactionById);
+router.get('/transactions/:id', authMiddleware, validateIdParam, transactionController.getTransactionById);
 
 module.exports = router;

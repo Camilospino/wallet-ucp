@@ -102,3 +102,32 @@ describe('Wallet Validators', () => {
     });
   });
 });
+
+describe('cardId opcional en las operaciones', () => {
+  it('acepta operaciones sin tarjeta', () => {
+    expect(validateDeposit({ amount: 100 }).isValid).toBe(true);
+    expect(validateWithdraw({ amount: 100, cardId: null }).isValid).toBe(true);
+  });
+
+  it('acepta un id de tarjeta entero positivo', () => {
+    expect(validateTransfer({ recipientEmail: 'a@b.com', amount: 100, cardId: 3 }).isValid).toBe(true);
+  });
+
+  it.each(['3', 0, -2, 1.5, 'abc'])('rechaza cardId = %p', (cardId) => {
+    const result = validateDeposit({ amount: 100, cardId });
+    expect(result.isValid).toBe(false);
+    expect(result.errors).toContain('La tarjeta seleccionada no es válida');
+  });
+});
+
+describe('recipientCardType opcional en la transferencia', () => {
+  it.each([undefined, null, 'CREDIT', 'DEBIT'])('acepta %p', (recipientCardType) => {
+    expect(validateTransfer({ recipientEmail: 'a@b.com', amount: 100, recipientCardType }).isValid).toBe(true);
+  });
+
+  it('rechaza un tipo desconocido', () => {
+    const result = validateTransfer({ recipientEmail: 'a@b.com', amount: 100, recipientCardType: 'PREPAGO' });
+    expect(result.isValid).toBe(false);
+    expect(result.errors).toContain('La tarjeta del destinatario debe ser CREDIT o DEBIT');
+  });
+});

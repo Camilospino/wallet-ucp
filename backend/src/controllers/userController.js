@@ -8,7 +8,7 @@ const { ERROR_CODES } = require('../config/constants');
  * Only the display name is returned: no email, phone, role, state or wallet
  * data, so this endpoint cannot be used to enumerate accounts or profile them.
  */
-const lookupRecipient = async (req, res) => {
+const lookupRecipient = async (req, res, next) => {
   try {
     const email = (req.query.email || '').trim().toLowerCase();
 
@@ -40,11 +40,7 @@ const lookupRecipient = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || 'Error al buscar el destinatario',
-      error: error.code || ERROR_CODES.INTERNAL_ERROR
-    });
+    next(error);
   }
 };
 

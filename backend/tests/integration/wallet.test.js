@@ -50,7 +50,7 @@ describe('POST /api/wallets/deposit', () => {
       .send({ amount: 0.1 })
       .expect(200);
 
-    await request(app)
+    const res = await request(app)
       .post('/api/wallets/deposit')
       .set('Authorization', `Bearer ${token}`)
       .send({ amount: 0.2 })
@@ -58,6 +58,8 @@ describe('POST /api/wallets/deposit', () => {
 
     // 0.1 + 0.2 = 0.30000000000000004 en float; NUMERIC debe dar 0.30
     expect(await getBalance(wallet.id)).toBe(0.3);
+    // La respuesta debe coincidir con lo guardado, no con el float sin redondear.
+    expect(res.body.data.wallet.saldo).toBe(0.3);
   });
 
   it('rechaza montos no validos con 422 y no altera el saldo', async () => {

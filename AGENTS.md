@@ -81,6 +81,16 @@ connection: `BEGIN`/`COMMIT`/`ROLLBACK` no longer cover it and
 atomicity and concurrency control. Never call a repository without `client`
 inside a `withTransaction` callback.
 
+## Money Model: Cards
+Every user owns exactly two cards (`tarjetas`): one CREDIT and one DEBIT, each
+with its own `saldo`. The wallet balance (`billeteras.saldo`) must ALWAYS equal
+the sum of the user's two cards. Any operation that moves money updates the
+card AND the wallet by the same amount inside the same `withTransaction`,
+locking the wallet first and then the card (`FOR UPDATE`). A withdrawal or
+transfer is limited by the chosen card's balance, not the wallet's. When an
+API call omits `cardId`, the DEBIT card is used. In a transfer each party may
+only ever see its own card, never the other party's card id or balance.
+
 ## Rate Limiting
 Limits are configurable via `RATE_LIMIT_AUTH_MAX`, `RATE_LIMIT_FINANCIAL_MAX`
 and `RATE_LIMIT_GENERAL_MAX`. They are automatically disabled when

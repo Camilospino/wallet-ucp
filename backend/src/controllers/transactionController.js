@@ -2,10 +2,10 @@ const transactionService = require('../services/transactionService');
 const walletService = require('../services/walletService');
 const { parsePagination, validatePagination } = require('../validators/paginationValidator');
 
-const getTransactionHistory = async (req, res) => {
+const getTransactionHistory = async (req, res, next) => {
   try {
-    // getWalletInfo returns the wallet plus recent movements; here we only need
-    // the wallet id, so read it directly to avoid an unnecessary extra query.
+    // Resolves the caller's wallet (404 if it does not exist) so the history is
+    // always scoped to the authenticated user.
     const walletInfo = await walletService.getWalletInfo(req.user.userId);
     
     const validation = validatePagination(req.query);
@@ -38,16 +38,11 @@ const getTransactionHistory = async (req, res) => {
       data: result
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al obtener historial de transacciones',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 
-const getTransactionById = async (req, res) => {
+const getTransactionById = async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await transactionService.getTransactionById(id, req.user.userId);
@@ -58,12 +53,7 @@ const getTransactionById = async (req, res) => {
       data: result
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al obtener transacción',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 

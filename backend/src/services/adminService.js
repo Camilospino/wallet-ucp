@@ -1,6 +1,7 @@
 const userRepository = require('../repositories/userRepository');
 const walletRepository = require('../repositories/walletRepository');
 const transactionRepository = require('../repositories/transactionRepository');
+const { withTransaction } = require('../utils/withTransaction');
 const { USER_STATES, WALLET_STATES, ERROR_CODES } = require('../config/constants');
 
 const getAllUsers = async (page = 1, limit = 50) => {
@@ -9,19 +10,20 @@ const getAllUsers = async (page = 1, limit = 50) => {
   const users = await userRepository.getAll(limit, offset);
   const total = await userRepository.count();
   
-  const usersWithWallets = await Promise.all(
-    users.map(async (user) => {
-      const wallet = await walletRepository.findByUserId(user.id);
-      return {
-        ...user,
-        wallet: wallet ? {
-          id: wallet.id,
-          saldo: wallet.saldo,
-          estado: wallet.estado
-        } : null
-      };
-    })
-  );
+  const wallets = await walletRepository.findByUserIds(users.map((user) => user.id));
+  const walletByUserId = new Map(wallets.map((wallet) => [wallet.usuario_id, wallet]));
+
+  const usersWithWallets = users.map((user) => {
+    const wallet = walletByUserId.get(user.id);
+    return {
+      ...user,
+      wallet: wallet ? {
+        id: wallet.id,
+        saldo: wallet.saldo,
+        estado: wallet.estado
+      } : null
+    };
+  });
   
   return {
     users: usersWithWallets,
@@ -95,14 +97,18 @@ const blockUser = async (userId, requestingUserId = null) => {
     };
   }
 
-  const updatedUser = await userRepository.updateState(userId, USER_STATES.BLOCKED);
-  
-  const wallet = await walletRepository.findByUserId(userId);
-  if (wallet) {
-    await walletRepository.updateState(wallet.id, WALLET_STATES.BLOCKED);
-  }
-  
-  return updatedUser;
+  // User and wallet change state together: a blocked user with an active
+  // wallet (or the reverse) must never be observable.
+  return withTransaction(async (client) => {
+    const updatedUser = await userRepository.updateState(userId, USER_STATES.BLOCKED, client);
+
+    const wallet = await walletRepository.findByUserId(userId, client);
+    if (wallet) {
+      await walletRepository.updateState(wallet.id, WALLET_STATES.BLOCKED, client);
+    }
+
+    return updatedUser;
+  });
 };
 
 const unblockUser = async (userId) => {
@@ -123,14 +129,16 @@ const unblockUser = async (userId) => {
     };
   }
 
-  const updatedUser = await userRepository.updateState(userId, USER_STATES.ACTIVE);
-  
-  const wallet = await walletRepository.findByUserId(userId);
-  if (wallet && wallet.estado === WALLET_STATES.BLOCKED) {
-    await walletRepository.updateState(wallet.id, WALLET_STATES.ACTIVE);
-  }
-  
-  return updatedUser;
+  return withTransaction(async (client) => {
+    const updatedUser = await userRepository.updateState(userId, USER_STATES.ACTIVE, client);
+
+    const wallet = await walletRepository.findByUserId(userId, client);
+    if (wallet && wallet.estado === WALLET_STATES.BLOCKED) {
+      await walletRepository.updateState(wallet.id, WALLET_STATES.ACTIVE, client);
+    }
+
+    return updatedUser;
+  });
 };
 
 module.exports = {

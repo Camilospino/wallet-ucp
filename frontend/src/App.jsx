@@ -12,6 +12,7 @@ import Withdraw from './pages/Withdraw'
 import Transfer from './pages/Transfer'
 import Transactions from './pages/Transactions'
 import Profile from './pages/Profile'
+import Cards from './pages/Cards'
 import Admin from './pages/Admin'
 import NotFound from './pages/NotFound'
 
@@ -48,6 +49,11 @@ function App() {
             <Route path="/transactions" element={
               <PrivateRoute>
                 <Transactions />
+              </PrivateRoute>
+            } />
+            <Route path="/cards" element={
+              <PrivateRoute>
+                <Cards />
               </PrivateRoute>
             } />
             <Route path="/profile" element={

@@ -1,7 +1,7 @@
 const walletService = require('../services/walletService');
 const { validateDeposit, validateWithdraw } = require('../validators/walletValidator');
 
-const deposit = async (req, res) => {
+const deposit = async (req, res, next) => {
   try {
     const validation = validateDeposit(req.body);
     if (!validation.isValid) {
@@ -12,8 +12,8 @@ const deposit = async (req, res) => {
       });
     }
 
-    const { amount } = req.body;
-    const result = await walletService.deposit(req.user.userId, amount);
+    const { amount, cardId } = req.body;
+    const result = await walletService.deposit(req.user.userId, amount, cardId);
 
     res.status(200).json({
       success: true,
@@ -21,16 +21,11 @@ const deposit = async (req, res) => {
       data: result
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al realizar depósito',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 
-const withdraw = async (req, res) => {
+const withdraw = async (req, res, next) => {
   try {
     const validation = validateWithdraw(req.body);
     if (!validation.isValid) {
@@ -41,8 +36,8 @@ const withdraw = async (req, res) => {
       });
     }
 
-    const { amount } = req.body;
-    const result = await walletService.withdraw(req.user.userId, amount);
+    const { amount, cardId } = req.body;
+    const result = await walletService.withdraw(req.user.userId, amount, cardId);
 
     res.status(200).json({
       success: true,
@@ -50,16 +45,11 @@ const withdraw = async (req, res) => {
       data: result
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al realizar retiro',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 
-const getWallet = async (req, res) => {
+const getWallet = async (req, res, next) => {
   try {
     const result = await walletService.getWalletInfo(req.user.userId);
 
@@ -69,12 +59,7 @@ const getWallet = async (req, res) => {
       data: result
     });
   } catch (error) {
-    const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
-      success: false,
-      message: error.message || 'Error al obtener billetera',
-      error: error.code || 'INTERNAL_ERROR'
-    });
+    next(error);
   }
 };
 

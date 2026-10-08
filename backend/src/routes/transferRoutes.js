@@ -30,6 +30,19 @@ const { financialRateLimiter } = require('../middlewares/rateLimitMiddleware');
  *                 type: number
  *                 format: decimal
  *                 example: 25000
+ *               cardId:
+ *                 type: integer
+ *                 nullable: true
+ *                 example: 1
+ *                 description: >
+ *                   Optional. Id of one of the sender's own cards (GET /api/cards).
+ *                   Unknown or foreign cards answer 404 CARD_NOT_FOUND. When
+ *                   omitted, the sender's debit card is used.
+ *               recipientCardType:
+ *                 type: string
+ *                 enum: [CREDIT, DEBIT]
+ *                 nullable: true
+ *                 description: Recipient's card the money arrives on (DEBIT when omitted).
  *     responses:
  *       200:
  *         description: Transfer successful

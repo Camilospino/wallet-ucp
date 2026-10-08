@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const { validateIdParam } = require('../middlewares/validateIdParam');
 const { authMiddleware, roleMiddleware } = require('../middlewares/authMiddleware');
 
 /**
@@ -191,7 +192,7 @@ router.get('/admin/transactions', authMiddleware, roleMiddleware('ADMIN'), admin
  *       404:
  *         description: User not found
  */
-router.patch('/admin/users/:id/block', authMiddleware, roleMiddleware('ADMIN'), adminController.blockUser);
+router.patch('/admin/users/:id/block', authMiddleware, roleMiddleware('ADMIN'), validateIdParam, adminController.blockUser);
 
 /**
  * @swagger
@@ -234,6 +235,6 @@ router.patch('/admin/users/:id/block', authMiddleware, roleMiddleware('ADMIN'), 
  *       404:
  *         description: User not found
  */
-router.patch('/admin/users/:id/unblock', authMiddleware, roleMiddleware('ADMIN'), adminController.unblockUser);
+router.patch('/admin/users/:id/unblock', authMiddleware, roleMiddleware('ADMIN'), validateIdParam, adminController.unblockUser);
 
 module.exports = router;

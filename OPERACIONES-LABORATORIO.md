@@ -39,7 +39,8 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8082   # Producción
 
 # /health debe devolver JSON del backend, NO el HTML de la SPA
 curl -s http://localhost:8082/health
-# {"status":"OK","timestamp":"..."}
+# {"status":"OK","database":"OK","timestamp":"..."}
+# (HTTP 503 con "database":"ERROR" si el backend no alcanza PostgreSQL)
 ```
 
 Si `/health` devuelve HTML, falta el bloque `location = /health` en el vhost
@@ -93,9 +94,45 @@ cambias código del backend hay que copiarlo a mano y reiniciar:
 
 ```bash
 docker cp backend/src/app.js laboratorio-ubuntu:/opt/wallet/backend/src/app.js
-docker exec laboratorio-ubuntu bash -lc 'pkill -f "node src/server.js"'
+docker exec laboratorio-ubuntu pkill -f '^node src/server.js'
 docker exec laboratorio-ubuntu bash /opt/wallet/start-wallet.sh
 ```
+
+> **Ojo con `pkill`:** el patrón lleva `^` y se ejecuta sin `bash -lc` a
+> propósito. Con `bash -lc 'pkill -f "node src/server.js"'` la línea de
+> comandos de la propia shell también contiene ese texto, así que `pkill` la
+> mata a ella antes de terminar (exit 143) y el reinicio queda a medias.
+
+**Los dos backends (QA y producción) corren desde la MISMA carpeta**
+`/opt/wallet/backend`: actualizar el código cambia ambos ambientes a la vez.
+
+### Migraciones de base de datos
+
+Las tablas del laboratorio pertenecen al rol `postgres` y la app se conecta
+como `walletucp` con permisos explícitos (`GRANT`). Por eso una migración debe
+ejecutarse **como `postgres`** y, si crea tablas, darle a `walletucp` los mismos
+permisos que tiene sobre las demás. Siempre con respaldo previo y en una sola
+transacción, para que un error no deje la base a medias:
+
+```bash
+# 1. Respaldo de ambas bases
+docker exec laboratorio-ubuntu bash -lc 'mkdir -p /opt/wallet/backups/$(date +%Y%m%d) && cd $_ &&
+  pg_dump "postgresql://walletucp:walletucp_password@127.0.0.1:5432/walletucp_qa" -Fc -f walletucp_qa.dump &&
+  pg_dump "postgresql://walletucp:walletucp_password@127.0.0.1:5432/walletucp"    -Fc -f walletucp.dump'
+
+# 2. Migracion (idempotente) + permisos de las tablas nuevas, en ambas bases
+docker cp database/migrations/01-create_tables.sql laboratorio-ubuntu:/tmp/migracion.sql
+docker exec laboratorio-ubuntu bash -lc 'printf "%s\n" \
+  "GRANT ALL PRIVILEGES ON TABLE tarjetas TO walletucp;" \
+  "GRANT ALL PRIVILEGES ON SEQUENCE tarjetas_id_seq TO walletucp;" >> /tmp/migracion.sql
+  chmod 644 /tmp/migracion.sql
+  for db in walletucp_qa walletucp; do
+    su postgres -c "psql -d $db -v ON_ERROR_STOP=1 --single-transaction -f /tmp/migracion.sql"
+  done'
+```
+
+Para restaurar un respaldo: `pg_restore --clean --if-exists -d <base> <archivo>.dump`
+(como `postgres`).
 
 ## Problemas conocidos
 

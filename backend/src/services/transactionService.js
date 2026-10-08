@@ -1,6 +1,7 @@
 const transactionRepository = require('../repositories/transactionRepository');
 const movementRepository = require('../repositories/movementRepository');
 const walletRepository = require('../repositories/walletRepository');
+const cardRepository = require('../repositories/cardRepository');
 const { ERROR_CODES } = require('../config/constants');
 
 const getTransactionHistory = async (walletId, page = 1, limit = 20, filters = {}) => {
@@ -59,10 +60,21 @@ const getTransactionById = async (transactionId, userId) => {
   }
 
   const movements = await movementRepository.findByTransactionId(transaction.id);
-  
+
+  // Only the viewer's OWN card is revealed: in a transfer the sender sees the
+  // card it paid with and the recipient the card it received on, never the
+  // other party's. The raw ids of both cards are dropped for the same reason.
+  const { tarjeta_origen_id, tarjeta_destino_id, ...visibleTransaction } = transaction;
+  const ownCardOf = (id) => (id ? cardRepository.findByIdForUser(id, userId) : null);
+  const card = (await ownCardOf(tarjeta_origen_id)) || (await ownCardOf(tarjeta_destino_id)) || null;
+
+  // A user only ever sees their own movements, which carry their own card.
+  const ownMovements = movements.filter((movement) => movement.wallet_id === wallet.id);
+
   return {
-    transaction,
-    movements
+    transaction: visibleTransaction,
+    card,
+    movements: ownMovements
   };
 };
 

@@ -52,3 +52,33 @@ export const formatDate = (value) => {
     day: 'numeric'
   })
 }
+
+export const CARD_TYPE_LABEL = {
+  CREDIT: 'Crédito',
+  DEBIT: 'Débito'
+}
+
+export const CARD_BRAND_LABEL = {
+  VISA: 'Visa',
+  MASTERCARD: 'Mastercard'
+}
+
+/**
+ * Short, recognisable description of a card, e.g. "Visa Crédito •••• 4242".
+ * Accepts both a card object ({ tipo, marca, ultimos_digitos }) and the
+ * prefixed columns of a transaction row ({ tarjeta_tipo, ... }).
+ */
+export const formatCard = (card) => {
+  if (!card) return ''
+  // A transaction row has its OWN `tipo` (DEPOSIT, TRANSFER...), so the
+  // prefixed columns must win whenever the value is a transaction row.
+  const isTransactionRow = 'tarjeta_ultimos_digitos' in card
+  const tipo = isTransactionRow ? card.tarjeta_tipo : card.tipo
+  const marca = isTransactionRow ? card.tarjeta_marca : card.marca
+  const digits = isTransactionRow ? card.tarjeta_ultimos_digitos : card.ultimos_digitos
+  if (!digits) return ''
+
+  const brand = CARD_BRAND_LABEL[marca] || marca || ''
+  const type = CARD_TYPE_LABEL[tipo] || tipo || ''
+  return `${brand} ${type} •••• ${digits}`.replace(/\s+/g, ' ').trim()
+}

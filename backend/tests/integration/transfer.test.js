@@ -1,5 +1,5 @@
 const {
-  app, request, pool, resetDatabase, createUserAndLogin, getBalance, countRows
+  app, request, pool, resetDatabase, createUserAndLogin, getBalance, getCardBalances, countRows
 } = require('../setup/helpers');
 
 describe('POST /api/transfers', () => {
@@ -164,6 +164,9 @@ describe('Atomicidad de la transferencia (ROLLBACK)', () => {
     // Nothing may have been persisted.
     expect(await getBalance(origen.wallet.id)).toBe(100000);
     expect(await getBalance(destino.wallet.id)).toBe(20000);
+    // The card balances were rolled back together with the wallets.
+    expect(await getCardBalances(origen.user.id)).toEqual({ CREDIT: 0, DEBIT: 100000 });
+    expect(await getCardBalances(destino.user.id)).toEqual({ CREDIT: 0, DEBIT: 20000 });
     expect(await countRows('transacciones')).toBe(transactionsBefore);
     expect(await countRows('movimientos')).toBe(movementsBefore);
   });
