@@ -1,0 +1,10 @@
+**/node_modules
+.git
+frontend
+backups
+Documentos
+**/.env
+laboratorio/docker/.env
+laboratorio/docker/env/*.env
+laboratorio/docker/postgres/import
+laboratorio/docker/postgres/ssl

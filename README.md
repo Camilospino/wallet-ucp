@@ -42,7 +42,7 @@ Ambientes desplegados (ver [CI/CD Pipeline](#dos-ambientes-dos-carpetas)):
 | | QA | Producción |
 | --- | --- | --- |
 | URL | http://wallet-ucp-qa.local:8080 | http://wallet-ucp.local:8080 |
-| Puerto alternativo (sin editar `/etc/hosts`) | http://localhost:8081 | http://localhost:8082 |
+| Puerto alternativo (sin editar `/etc/hosts`) | http://localhost:8083 | http://localhost:8082 |
 | Credenciales | `admin@example.com` / `Admin123!` | `admin@example.com` / `Admin123!` |
 
 ### Documentación

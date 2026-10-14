@@ -1,0 +1,105 @@
+# ===========================================================================
+# Stack de WalletUCP que corre DENTRO del contenedor laboratorio-ubuntu.
+#
+# El Ubuntu hace de "servidor": tiene su propio Docker Engine (Docker-in-Docker)
+# y en el viven QA y Produccion como contenedores separados:
+#
+#   nginx :8081 -> backend-qa   :5001 -> BD walletucp_qa   (rama develop)
+#   nginx :8082 -> backend-prod :5000 -> BD walletucp      (rama main)
+#   nginx :80   -> por server_name (wallet-ucp.local / wallet-ucp-qa.local)
+#
+# Se gestiona con /opt/wallet/start-wallet.sh; no hace falta llamarlo a mano.
+# ===========================================================================
+name: wallet-lab
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: wallet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}
+      WALLET_DB_PASSWORD: ${WALLET_DB_PASSWORD:?define WALLET_DB_PASSWORD en .env}
+    # Con NODE_ENV=production el backend exige SSL hacia PostgreSQL
+    # (backend/src/config/database.js). El PostgreSQL nativo de Ubuntu lo traia
+    # activado con su certificado autofirmado; aqui se replica igual.
+    # start-wallet.sh genera el certificado la primera vez.
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/ssl/server.crt
+      - -c
+      - ssl_key_file=/ssl/server.key
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/ssl:/ssl:ro
+      - ./postgres/00-init.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+      - ../database:/wallet-database:ro
+      # Si al crear el volumen existe import/cluster.sql, se restaura ese
+      # respaldo (pg_dumpall) en lugar de crear las bases desde cero.
+      - ./postgres/import:/wallet-import:ro
+    # Solo en el loopback del Ubuntu: psql desde el Ubuntu sigue funcionando
+    # (127.0.0.1:5432), pero la base no es alcanzable desde fuera.
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d walletucp && pg_isready -U postgres -d walletucp_qa"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend-prod:
+    build:
+      context: ../backend
+      dockerfile: ../docker/backend.Dockerfile
+    image: wallet-backend:lab
+    container_name: wallet-backend-prod
+    restart: unless-stopped
+    env_file: ./env/produccion.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5000:5000"
+
+  backend-qa:
+    image: wallet-backend:lab
+    container_name: wallet-backend-qa
+    restart: unless-stopped
+    env_file: ./env/qa.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Reutiliza la imagen que construye backend-prod: ambos ambientes corren
+      # el mismo codigo, igual que antes con /opt/wallet/backend.
+      backend-prod:
+        condition: service_started
+    ports:
+      - "127.0.0.1:5001:5001"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: wallet-nginx
+    restart: unless-stopped
+    depends_on:
+      - backend-prod
+      - backend-qa
+    ports:
+      - "80:80"
+      - "8081:8081"
+      - "8082:8082"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # Se monta /var/www/html COMPLETO y no cada carpeta: el pipeline hace
+      # `rm -rf wallet-ucp-qa && mkdir wallet-ucp-qa`, y un bind mount de la
+      # carpeta borrada seguiria apuntando al directorio viejo (vacio).
+      - /var/www/html:/var/www/html:ro
+      # Los logs quedan en el Ubuntu, en las mismas rutas de siempre.
+      - /var/log/nginx:/var/log/nginx
+
+volumes:
+  pgdata:

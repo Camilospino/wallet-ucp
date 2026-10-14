@@ -1,0 +1,6 @@
+# Secretos y respaldos del laboratorio: nunca al repositorio.
+docker/.env
+docker/env/*.env
+docker/postgres/import/*
+!docker/postgres/import/.gitkeep
+docker/postgres/ssl/
